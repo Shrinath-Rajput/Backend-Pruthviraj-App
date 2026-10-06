@@ -1,29 +1,29 @@
 import { Router } from "express";
 import leaveController from "./leave.controller.js";
 import { authenticate } from "../../middleware/authenticate.js";
-import { authorize, ROLES } from "../../middleware/authorize.js";
+import { authorize, authorizeBusiness } from "../../middleware/authorize.js";
 
 const router = Router();
 
 router.use(authenticate);
+router.use(authorizeBusiness());
 
-// Employee leave endpoints
-router.post("/", leaveController.applyLeave);
-router.get("/me", leaveController.getMyLeaves);
-router.get("/balance", leaveController.getMyLeaveBalance);
-router.put("/:id/cancel", leaveController.cancelLeave);
+// Employee Self-Service Endpoints (Section 26)
+router.get("/balances", leaveController.getBalances);
+router.get("/my-requests", leaveController.getMyRequests);
+router.post("/apply", leaveController.apply);
 
-// Supervisor & Executive endpoints
+// Administrative / Review Endpoints
 router.get(
   "/",
-  authorize(ROLES.SUPERVISOR, ROLES.SUPER_SUPERVISOR),
-  leaveController.getAllLeaves
+  authorize(["OWNER", "HR", "MANAGER", "SUPER_SUPERVISOR", "SUPERVISOR"]),
+  leaveController.list
 );
 
 router.put(
-  "/:id/status",
-  authorize(ROLES.SUPERVISOR, ROLES.SUPER_SUPERVISOR),
-  leaveController.updateLeaveStatus
+  "/:id/review",
+  authorize(["OWNER", "HR", "MANAGER", "SUPER_SUPERVISOR", "SUPERVISOR"]),
+  leaveController.review
 );
 
 export default router;

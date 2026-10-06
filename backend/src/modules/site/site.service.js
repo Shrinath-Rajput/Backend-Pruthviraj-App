@@ -1,169 +1,327 @@
-import Site from "./site.model.js";
+import { Site, SiteGovernance, Client, PurchaseOrder } from "./site.model.js";
+import User from "../auth/user.model.js";
 import ApiError from "../../common/ApiError.js";
-import {
-  toGeoJSONPoint,
-  calculateDistanceMeters,
-  isPointInPolygon,
-} from "../../common/utils/geoSpatial.js";
+import { redisService } from "../../config/redis.js";
+import { uploadToS3, generateSafeStorageKey } from "../../middleware/upload.js";
+
+const SITE_CACHE_TTL = 86400; // 24 hours (Section 15)
 
 export class SiteService {
   /**
-   * Create a new work site with geofence
+   * Cache active site geofence details in Redis (Section 15)
    */
-  async createSite(siteData) {
-    const existing = await Site.findOne({ code: siteData.code.toUpperCase() });
-    if (existing) {
-      throw ApiError.conflict(`Site with code '${siteData.code}' already exists.`);
+  async cacheSiteGeofence(site) {
+    if (!site) return;
+    const cacheKey = `site_geofence:${site._id}`;
+    const cachePayload = {
+      siteId: site._id.toString(),
+      centroid: site.centroid,
+      boundary: site.boundaryPolygon,
+      radius: site.geofenceRadiusMeters,
+      businessId: site.businessId,
+      isActive: site.isActive,
+    };
+    await redisService.set(cacheKey, cachePayload, SITE_CACHE_TTL);
+  }
+
+  /**
+   * Get cached site geofence or fallback to DB and re-cache
+   */
+  async getCachedSiteGeofence(siteId) {
+    const cacheKey = `site_geofence:${siteId}`;
+    const cached = await redisService.get(cacheKey);
+    if (cached) {
+      return typeof cached === "string" ? JSON.parse(cached) : cached;
     }
 
-    const location = toGeoJSONPoint(siteData.latitude, siteData.longitude);
+    const site = await Site.findById(siteId).lean();
+    if (site) {
+      await this.cacheSiteGeofence(site);
+      return {
+        siteId: site._id.toString(),
+        centroid: site.centroid,
+        boundary: site.boundaryPolygon,
+        radius: site.geofenceRadiusMeters,
+        businessId: site.businessId,
+        isActive: site.isActive,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Invalidate site cache on configuration update (Section 15)
+   */
+  async invalidateSiteCache(siteId) {
+    await redisService.del(`site_geofence:${siteId}`);
+  }
+
+  /**
+   * Create new Site with initial Site Governance binding
+   */
+  async createSite(siteData, allowedBusinessIds) {
+    if (!allowedBusinessIds.includes(siteData.businessId)) {
+      throw ApiError.forbidden(`Unauthorized to create site for business '${siteData.businessId}'.`);
+    }
+
+    const existing = await Site.findOne({ siteCode: siteData.siteCode.toUpperCase() });
+    if (existing) {
+      throw ApiError.conflict(`Site with code '${siteData.siteCode}' already exists.`);
+    }
 
     const site = await Site.create({
       ...siteData,
-      code: siteData.code.toUpperCase(),
-      location,
+      siteCode: siteData.siteCode.toUpperCase(),
     });
+
+    // Cache immediately (Section 15)
+    await this.cacheSiteGeofence(site);
+
+    // If supervisor provided, create 1-to-1 site governance invariant (Section 16)
+    if (siteData.primarySupervisorId) {
+      await SiteGovernance.create({
+        siteId: site._id,
+        businessId: site.businessId,
+        primarySupervisorId: siteData.primarySupervisorId,
+        governanceStatus: "ACTIVE_ON_DUTY",
+      });
+    }
 
     return site;
   }
 
   /**
-   * List sites with pagination & filtering
+   * List sites with business isolation filter and pagination
    */
-  async getSites({ page = 1, limit = 20, search, isActive }) {
-    const query = {};
+  async getSites({ businessId, region, search, page = 1, limit = 20, allowedBusinessIds }) {
+    const query = {
+      businessId: { $in: allowedBusinessIds },
+    };
 
-    if (isActive !== undefined) {
-      query.isActive = isActive === "true" || isActive === true;
+    if (businessId && allowedBusinessIds.includes(businessId)) {
+      query.businessId = businessId;
     }
-
+    if (region) query.region = region;
     if (search) {
       query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { code: { $regex: search, $options: "i" } },
+        { siteName: { $regex: search, $options: "i" } },
+        { siteCode: { $regex: search, $options: "i" } },
       ];
     }
 
-    const skip = (page - 1) * limit;
-
+    const skip = (Number(page) - 1) * Number(limit);
     const [sites, total] = await Promise.all([
-      Site.find(query)
-        .populate("assignedSupervisorId", "name email phone employeeCode")
-        .skip(skip)
-        .limit(Number(limit))
-        .sort({ createdAt: -1 }),
+      Site.find(query).populate("clientId", "clientName clientCode").skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
       Site.countDocuments(query),
     ]);
 
     return {
       sites,
       pagination: {
-        total,
         page: Number(page),
         limit: Number(limit),
+        total,
         totalPages: Math.ceil(total / limit),
       },
     };
   }
 
-  /**
-   * Get single site by ID
-   */
-  async getSiteById(id) {
-    const site = await Site.findById(id).populate("assignedSupervisorId", "name email phone employeeCode");
-    if (!site) {
-      throw ApiError.notFound("Site not found.");
+  async getSiteById(siteId, allowedBusinessIds) {
+    const site = await Site.findById(siteId).populate("clientId");
+    if (!site) throw ApiError.notFound("Site not found.");
+    if (!allowedBusinessIds.includes(site.businessId)) {
+      throw ApiError.forbidden("Access to site in unauthorized business denied.");
     }
     return site;
   }
 
-  /**
-   * Update site details or geofence boundary
-   */
-  async updateSite(id, updateData) {
-    const site = await Site.findById(id);
-    if (!site) {
-      throw ApiError.notFound("Site not found.");
-    }
-
-    if (updateData.latitude !== undefined && updateData.longitude !== undefined) {
-      updateData.location = toGeoJSONPoint(updateData.latitude, updateData.longitude);
-      delete updateData.latitude;
-      delete updateData.longitude;
-    }
-
-    if (updateData.code) {
-      updateData.code = updateData.code.toUpperCase();
-      const existing = await Site.findOne({ code: updateData.code, _id: { $ne: id } });
-      if (existing) {
-        throw ApiError.conflict(`Site code '${updateData.code}' is already taken.`);
-      }
-    }
-
-    const updatedSite = await Site.findByIdAndUpdate(id, { $set: updateData }, { new: true });
-    return updatedSite;
-  }
-
-  /**
-   * Delete or deactivate site
-   */
-  async deleteSite(id) {
-    const site = await Site.findById(id);
-    if (!site) {
-      throw ApiError.notFound("Site not found.");
-    }
-    await Site.findByIdAndDelete(id);
-    return { message: "Site deleted successfully." };
-  }
-
-  /**
-   * Find sites near a given GPS coordinate using MongoDB 2dsphere $near
-   */
-  async findSitesNearLocation(latitude, longitude, maxDistanceMeters = 5000) {
-    const sites = await Site.find({
-      isActive: true,
-      location: {
-        $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [Number(longitude), Number(latitude)],
-          },
-          $maxDistance: Number(maxDistanceMeters),
-        },
-      },
-    }).limit(10);
-
-    return sites;
-  }
-
-  /**
-   * Verify whether a given GPS coordinate is within site geofence
-   */
-  async verifyGeofence(siteId, latitude, longitude) {
+  async updateSite(siteId, updateData, allowedBusinessIds) {
     const site = await Site.findById(siteId);
-    if (!site) {
-      throw ApiError.notFound("Target site not found.");
+    if (!site) throw ApiError.notFound("Site not found.");
+    if (!allowedBusinessIds.includes(site.businessId)) {
+      throw ApiError.forbidden("Access denied to update site.");
     }
 
-    const [siteLon, siteLat] = site.location.coordinates;
-    const distanceMeters = calculateDistanceMeters(latitude, longitude, siteLat, siteLon);
+    Object.assign(site, updateData);
+    await site.save();
 
-    let isInside = false;
+    // Invalidate Redis cache (Section 15)
+    await this.invalidateSiteCache(siteId);
+    await this.cacheSiteGeofence(site);
 
-    if (site.geofenceType === "POLYGON" && site.polygonBoundary?.coordinates?.length) {
-      isInside = isPointInPolygon([longitude, latitude], site.polygonBoundary.coordinates[0]);
-    } else {
-      isInside = distanceMeters <= site.radiusMeters;
+    return site;
+  }
+
+  // ================= CLIENT MANAGEMENT (Section 30) =================
+  async createClient(clientData, allowedBusinessIds) {
+    if (!allowedBusinessIds.includes(clientData.businessId)) {
+      throw ApiError.forbidden("Unauthorized business scope for client creation.");
     }
+
+    const existing = await Client.findOne({ clientCode: clientData.clientCode.toUpperCase() });
+    if (existing) throw ApiError.conflict(`Client code '${clientData.clientCode}' already exists.`);
+
+    return await Client.create({
+      ...clientData,
+      clientCode: clientData.clientCode.toUpperCase(),
+    });
+  }
+
+  async getClients({ businessId, search, page = 1, limit = 20, allowedBusinessIds }) {
+    const query = { businessId: { $in: allowedBusinessIds } };
+    if (businessId && allowedBusinessIds.includes(businessId)) {
+      query.businessId = businessId;
+    }
+    if (search) {
+      query.$or = [
+        { clientName: { $regex: search, $options: "i" } },
+        { clientCode: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const [clients, total] = await Promise.all([
+      Client.find(query).skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
+      Client.countDocuments(query),
+    ]);
 
     return {
-      siteId: site._id,
-      siteName: site.name,
-      siteRadiusMeters: site.radiusMeters,
-      distanceMeters,
-      isInside,
-      geofenceType: site.geofenceType,
+      clients,
+      pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  async getClientById(clientId, allowedBusinessIds) {
+    const client = await Client.findById(clientId);
+    if (!client) throw ApiError.notFound("Client not found.");
+    if (!allowedBusinessIds.includes(client.businessId)) {
+      throw ApiError.forbidden("Access denied to client outside authorized business.");
+    }
+    return client;
+  }
+
+  async updateClient(clientId, updateData, allowedBusinessIds) {
+    const client = await Client.findById(clientId);
+    if (!client) throw ApiError.notFound("Client not found.");
+    if (!allowedBusinessIds.includes(client.businessId)) {
+      throw ApiError.forbidden("Access denied to client.");
+    }
+
+    Object.assign(client, updateData);
+    await client.save();
+    return client;
+  }
+
+  // ================= PURCHASE ORDERS (Section 33) =================
+  async createPurchaseOrder(poData, file, allowedBusinessIds) {
+    if (!allowedBusinessIds.includes(poData.businessId)) {
+      throw ApiError.forbidden("Unauthorized business scope for PO creation.");
+    }
+
+    let documentUrl = null;
+    if (file) {
+      const storageKey = generateSafeStorageKey("purchase_orders", poData.businessId, file.originalname);
+      documentUrl = await uploadToS3({ key: storageKey, buffer: file.buffer, mimeType: file.mimetype });
+    }
+
+    return await PurchaseOrder.create({
+      ...poData,
+      documentUrl,
+    });
+  }
+
+  async getPurchaseOrders({ businessId, clientId, siteId, page = 1, limit = 20, allowedBusinessIds }) {
+    const query = { businessId: { $in: allowedBusinessIds } };
+    if (businessId && allowedBusinessIds.includes(businessId)) query.businessId = businessId;
+    if (clientId) query.clientId = clientId;
+    if (siteId) query.siteId = siteId;
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const [orders, total] = await Promise.all([
+      PurchaseOrder.find(query).populate("clientId siteId").skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
+      PurchaseOrder.countDocuments(query),
+    ]);
+
+    return {
+      orders,
+      pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  // ================= WORKERS (Section 31 & 32) =================
+  async createWorker(workerData, allowedBusinessIds) {
+    const businessId = workerData.businessIds?.[0] || "pruthviraj-enterprises";
+    if (!allowedBusinessIds.includes(businessId)) {
+      throw ApiError.forbidden("Unauthorized business for worker creation.");
+    }
+
+    const existingCode = await User.findOne({ employeeCode: workerData.employeeCode.toUpperCase() });
+    if (existingCode) throw ApiError.conflict(`Employee code '${workerData.employeeCode}' already exists.`);
+
+    const existingPhone = await User.findOne({ phoneNumber: workerData.phoneNumber });
+    if (existingPhone) throw ApiError.conflict(`Worker phone '${workerData.phoneNumber}' already exists.`);
+
+    return await User.create({
+      ...workerData,
+      role: workerData.role || "EMPLOYEE",
+      employeeCode: workerData.employeeCode.toUpperCase(),
+    });
+  }
+
+  async getWorkers({ businessId, siteId, search, page = 1, limit = 20, allowedBusinessIds }) {
+    const query = {
+      businessIds: { $in: allowedBusinessIds },
+      role: { $in: ["EMPLOYEE", "STAFF", "SUPERVISOR"] },
+    };
+
+    if (businessId && allowedBusinessIds.includes(businessId)) {
+      query.businessIds = businessId;
+    }
+    if (siteId) query.assignedSiteId = siteId;
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search, $options: "i" } },
+        { employeeCode: { $regex: search, $options: "i" } },
+        { phoneNumber: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const [workers, total] = await Promise.all([
+      User.find(query).populate("assignedSiteId", "siteName siteCode").skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
+      User.countDocuments(query),
+    ]);
+
+    return {
+      workers,
+      pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async getWorkerById(workerId, allowedBusinessIds) {
+    const worker = await User.findById(workerId).populate("assignedSiteId assignedSupervisorId");
+    if (!worker) throw ApiError.notFound("Worker not found.");
+    const hasAccess = worker.businessIds.some((b) => allowedBusinessIds.includes(b));
+    if (!hasAccess) throw ApiError.forbidden("Access denied to worker from unauthorized business.");
+    return worker;
+  }
+
+  async uploadWorkerDocument(workerId, { documentType, maskedNumber }, file, allowedBusinessIds) {
+    const worker = await this.getWorkerById(workerId, allowedBusinessIds);
+    if (!file) throw ApiError.badRequest("Document file buffer required.");
+
+    const storageKey = generateSafeStorageKey("worker_docs", worker.businessIds[0] || "general", file.originalname);
+    const fileUrl = await uploadToS3({ key: storageKey, buffer: file.buffer, mimeType: file.mimetype });
+
+    worker.documents.push({
+      documentType,
+      maskedNumber: maskedNumber || "••••" + file.originalname.slice(-4),
+      fileUrl,
+      verified: true,
+    });
+
+    await worker.save();
+    return worker;
   }
 }
 

@@ -2,66 +2,83 @@ import payrollService from "./payroll.service.js";
 import ApiResponse from "../../common/ApiResponse.js";
 
 export class PayrollController {
-  async processSalary(req, res, next) {
+  async getEmployeeSlips(req, res, next) {
     try {
-      const payroll = await payrollService.processMonthlySalary({
-        ...req.body,
-        processedBy: req.user.id,
-      });
-      return res
-        .status(201)
-        .json(ApiResponse.created(payroll, "Monthly payroll calculated and generated."));
+      const targetUserId = req.query.userId || req.user.id;
+      const slips = await payrollService.getEmployeeSlips(targetUserId);
+      return res.status(200).json(ApiResponse.success(slips));
     } catch (error) {
       next(error);
     }
   }
 
-  async getMyPayroll(req, res, next) {
+  async getSlipDetails(req, res, next) {
     try {
-      const result = await payrollService.getPayrollRecords({
-        employeeId: req.user.id,
-        ...req.query,
-      });
-      return res
-        .status(200)
-        .json(ApiResponse.success(result, "Employee payroll history retrieved."));
+      const slip = await payrollService.getSlipDetails(
+        req.params.id,
+        req.user.id,
+        req.allowedBusinessIds
+      );
+      return res.status(200).json(ApiResponse.success(slip));
     } catch (error) {
       next(error);
     }
   }
 
-  async getAllPayroll(req, res, next) {
+  async downloadSlipPdf(req, res, next) {
     try {
-      const result = await payrollService.getPayrollRecords(req.query);
-      return res
-        .status(200)
-        .json(ApiResponse.success(result, "All payroll records retrieved."));
-    } catch (error) {
-      next(error);
-    }
-  }
+      const pdfBuffer = await payrollService.getSlipPdfBuffer(
+        req.params.id,
+        req.user.id,
+        req.allowedBusinessIds
+      );
 
-  async downloadSalarySlip(req, res, next) {
-    try {
-      const { id } = req.params;
-      const { pdfBuffer, fileName } = await payrollService.generateSalarySlip(id);
-
-      res.setHeader("Content-Type", "application/octet-stream");
-      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="payslip_${req.params.id}.pdf"`
+      );
       return res.send(pdfBuffer);
     } catch (error) {
       next(error);
     }
   }
 
-  async markAsPaid(req, res, next) {
+  async processPayroll(req, res, next) {
     try {
-      const { id } = req.params;
-      const { paymentReference } = req.body;
-      const updated = await payrollService.markAsPaid(id, paymentReference);
-      return res
-        .status(200)
-        .json(ApiResponse.success(updated, "Payroll marked as paid."));
+      const result = await payrollService.processPayrollRun({
+        businessId: req.body.businessId,
+        payPeriod: req.body.payPeriod,
+        year: req.body.year,
+        monthIndex: req.body.monthIndex,
+        allowedBusinessIds: req.allowedBusinessIds,
+      });
+      return res.status(200).json(ApiResponse.success(result, "Payroll calculation completed."));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async approvePayroll(req, res, next) {
+    try {
+      const result = await payrollService.approvePayrollRun(
+        req.body.runId,
+        req.user.id,
+        req.allowedBusinessIds
+      );
+      return res.status(200).json(ApiResponse.success(result, "Payroll run approved."));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async disbursePayroll(req, res, next) {
+    try {
+      const result = await payrollService.disbursePayrollRun(
+        req.body.runId,
+        req.allowedBusinessIds
+      );
+      return res.status(200).json(ApiResponse.success(result, "Payroll marked as disbursed."));
     } catch (error) {
       next(error);
     }

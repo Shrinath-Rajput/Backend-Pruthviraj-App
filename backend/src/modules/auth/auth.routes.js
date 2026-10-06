@@ -1,55 +1,45 @@
 import { Router } from "express";
 import authController from "./auth.controller.js";
 import {
-  registerSchema,
-  loginSchema,
-  requestOtpSchema,
+  sendOtpSchema,
   verifyOtpSchema,
   refreshTokenSchema,
 } from "./auth.validation.js";
 import { validate } from "../../middleware/validate.js";
 import { authenticate } from "../../middleware/authenticate.js";
-import { authLimiter, otpLimiter } from "../../middleware/rateLimiter.js";
+import {
+  otpSendLimiter,
+  otpVerifyLimiter,
+  authLimiter,
+} from "../../middleware/rateLimiter.js";
 
 const router = Router();
 
-// Public Authentication Endpoints
+// Primary Mobile Authentication (Section 6)
 router.post(
-  "/register",
-  authLimiter,
-  validate(registerSchema),
-  authController.register
-);
-
-router.post(
-  "/login",
-  authLimiter,
-  validate(loginSchema),
-  authController.login
-);
-
-router.post(
-  "/otp/request",
-  otpLimiter,
-  validate(requestOtpSchema),
-  authController.requestOtp
+  "/otp/send",
+  otpSendLimiter,
+  validate(sendOtpSchema),
+  authController.sendOtp
 );
 
 router.post(
   "/otp/verify",
-  authLimiter,
+  otpVerifyLimiter,
   validate(verifyOtpSchema),
   authController.verifyOtp
 );
 
+// Token Lifecycle
 router.post(
-  "/refresh-token",
+  "/refresh",
+  authLimiter,
   validate(refreshTokenSchema),
   authController.refreshToken
 );
 
-// Protected Authentication Endpoints
-router.get("/me", authenticate, authController.getProfile);
 router.post("/logout", authenticate, authController.logout);
+
+router.get("/me", authenticate, authController.getMe);
 
 export default router;

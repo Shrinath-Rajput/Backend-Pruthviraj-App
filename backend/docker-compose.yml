@@ -1,35 +1,41 @@
+version: "3.8"
+
 services:
-  api:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: geowork-backend-api
+    container_name: pruthviraj-backend-api
     restart: always
     ports:
       - "5000:5000"
     environment:
       - PORT=5000
-      - NODE_ENV=development
-      - MONGODB_URI=mongodb://mongodb:27017/geowork_db
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/pruthviraj_db
       - REDIS_URL=redis://redis:6379
-      - JWT_ACCESS_SECRET=your_jwt_access_secret_key_change_in_production
-      - JWT_REFRESH_SECRET=your_jwt_refresh_secret_key_change_in_production
-      - JWT_ACCESS_EXPIRES_IN=15m
-      - JWT_REFRESH_EXPIRES_IN=7d
-      - OTP_EXPIRY_MINUTES=5
-      - OTP_RATE_LIMIT=3
-      - CORS_ORIGIN=*
+      - JWT_ACCESS_SECRET=pruthviraj_access_secret_super_secure_key_2026
+      - JWT_REFRESH_SECRET=pruthviraj_refresh_secret_super_secure_key_2026
+      - S3_ENDPOINT=http://minio:9000
+      - S3_REGION=ap-south-1
+      - S3_BUCKET=pruthviraj-enterprise-storage
+      - S3_ACCESS_KEY_ID=minioadmin
+      - S3_SECRET_ACCESS_KEY=minioadmin
+      - S3_FORCE_PATH_STYLE=true
+      - CORS_ORIGINS=*
     depends_on:
       mongodb:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_started
     networks:
-      - geowork-network
+      - pruthviraj-network
 
   mongodb:
     image: mongo:7.0
-    container_name: geowork-mongodb
+    container_name: pruthviraj-mongodb
     restart: always
     ports:
       - "27017:27017"
@@ -41,11 +47,11 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - geowork-network
+      - pruthviraj-network
 
   redis:
     image: redis:7.2-alpine
-    container_name: geowork-redis
+    container_name: pruthviraj-redis
     restart: always
     ports:
       - "6379:6379"
@@ -57,12 +63,29 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - geowork-network
+      - pruthviraj-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: pruthviraj-minio
+    restart: always
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - pruthviraj-network
 
 volumes:
   mongo_data:
   redis_data:
+  minio_data:
 
 networks:
-  geowork-network:
+  pruthviraj-network:
     driver: bridge

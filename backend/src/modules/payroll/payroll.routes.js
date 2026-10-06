@@ -1,33 +1,35 @@
 import { Router } from "express";
 import payrollController from "./payroll.controller.js";
 import { authenticate } from "../../middleware/authenticate.js";
-import { authorize, ROLES } from "../../middleware/authorize.js";
+import { authorize, authorizeBusiness } from "../../middleware/authorize.js";
 
 const router = Router();
 
 router.use(authenticate);
+router.use(authorizeBusiness());
 
-// Employee access
-router.get("/me", payrollController.getMyPayroll);
-router.get("/:id/slip", payrollController.downloadSalarySlip);
+// Employee Payslip Access (Section 4.4 in PDF)
+router.get("/slips", payrollController.getEmployeeSlips);
+router.get("/slips/:id", payrollController.getSlipDetails);
+router.get("/slips/:id/pdf", payrollController.downloadSlipPdf);
 
-// Supervisor & Executive access
-router.get(
-  "/",
-  authorize(ROLES.SUPERVISOR, ROLES.SUPER_SUPERVISOR),
-  payrollController.getAllPayroll
+// Executive & HR Processing Workflow (Section 27)
+router.post(
+  "/process",
+  authorize(["OWNER", "HR", "ACCOUNTS"]),
+  payrollController.processPayroll
 );
 
 router.post(
-  "/process",
-  authorize(ROLES.SUPER_SUPERVISOR),
-  payrollController.processSalary
+  "/approve",
+  authorize(["OWNER", "HR"]),
+  payrollController.approvePayroll
 );
 
-router.put(
-  "/:id/pay",
-  authorize(ROLES.SUPER_SUPERVISOR),
-  payrollController.markAsPaid
+router.post(
+  "/disburse",
+  authorize(["OWNER", "ACCOUNTS"]),
+  payrollController.disbursePayroll
 );
 
 export default router;

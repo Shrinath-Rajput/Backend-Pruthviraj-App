@@ -1,40 +1,34 @@
-# GeoWork Backend
+# PRUTHVIRAJ Workforce & Business Management System
+## Production-Grade Enterprise Backend
 
-> **Enterprise Geo-Fenced Workforce & Attendance Management System**  
-> Architected with Node.js, Express.js, MongoDB (Mongoose), Redis, and ES Modules.
+An industrial IoT, precision geofenced workforce, attendance, payroll, compliance, financial, and multi-business management platform engineered for **Pruthviraj Enterprises** and **Pruthviraj Facilities Pvt. Ltd.**.
 
----
-
-## 🏗️ Architecture Overview
-
-GeoWork Backend follows a strict **Layered MVC + Service Layer Architecture** ensuring high scalability, enterprise maintainability, and clean separation of concerns.
-
-```
-Client / Frontend (Mobile App / Web Dashboard)
-       ↓
-    API Route (/api/v1/...)
-       ↓
-   Middleware (Auth, RBAC, Rate Limiter, Multer, Zod Validation)
-       ↓
-   Controller (HTTP Request/Response Handling, Standard ApiResponse)
-       ↓
-    Service Layer (Pure Business Logic, Geofencing, Cryptographic Hashes)
-       ↓
-     Model (Mongoose Schemas, 2dsphere Geospatial Indexes)
-       ↓
-   MongoDB / Redis Cache
-```
-
-### Architectural Rules
-1. **Routes**: Define REST API endpoints and wire middleware with controllers. Zero business logic.
-2. **Controllers**: Handle HTTP `req` and `res`, invoke services, return standardized `ApiResponse`. Zero database queries.
-3. **Services**: Pure business logic, calculations, and orchestrations. Zero direct Express `req`/`res` object access.
-4. **Models**: Mongoose schemas defining MongoDB collections with GeoJSON coordinates and `2dsphere` spatial indexes.
-5. **Middleware**: Centralized authentication, role-based authorization, rate limiting, request validation, and error handling.
+Built with **JavaScript (Node.js 20+ LTS ES Modules)**, Express.js, MongoDB 7+ (GeoJSON `2dsphere`), Redis 7+, AWS S3 / MinIO, and a cryptographic SHA-256 chained attendance ledger.
 
 ---
 
-## 📁 Exact Project Folder Structure
+## 1. System Architecture & Features
+
+### Core Architectural Highlights
+- **Pure JavaScript & Modern ES Modules**: 100% native ES modules (`"type": "module"`), `async/await`, no TypeScript, no compilation overhead.
+- **Modular Monolith**: Strict clean layer architecture: `Routes → Controller → Service → Model/Database → External Infrastructure`.
+- **Multi-Tenant Business Data Isolation**: Strict data segregation between **Pruthviraj Enterprises** and **Pruthviraj Facilities Pvt. Ltd.** with combined owner visibility and business-wise drill-downs.
+- **Production Phone + OTP Authentication**: Cryptographically secure 6-digit OTP stored as SHA-256 hashes in Redis, with max 3 verification attempts and rate limiting (max 3 sends per 10 minutes).
+- **JWT With Refresh Token Rotation & Reuse Detection**: 15-minute access tokens and 7-day refresh tokens. Stored as SHA-256 hashes. If a revoked refresh token is reused, all sessions for the affected user are immediately revoked.
+- **Enterprise RBAC**: Role-based and granular permission-based authorization (`VIEW`, `ADD`, `EDIT`, `APPROVE`, `DELETE`, `EXPORT`, `MANAGE`) covering 8 distinct roles: `OWNER`, `HR`, `ACCOUNTS`, `MANAGER`, `STAFF`, `SUPERVISOR`, `EMPLOYEE`, `SUPER_SUPERVISOR`.
+- **MongoDB 2dsphere Precision Geofencing**: Millisecond proximity queries via `$near` and multi-point perimeter boundary checks with `$geoIntersects` and secondary Haversine calculations. Automatic rejection of low-accuracy GPS readings (> 20m tolerance).
+- **Redis Geofence Cache & Distributed Locks**: Active site geometries cached with 24-hour TTL. Redis distributed locking (`Redlock` pattern) to enforce the **1 Site = 1 Primary Supervisor** invariant during shift handover.
+- **Cryptographic SHA-256 Attendance Ledger**: Every punch is hashed with its previous block (`prevRecordHash`), timestamp, coordinates, user ID, punch type, and selfie photo hash. Full ledger chain integrity verification prevents silent history modification.
+- **Biometric Face Verification Abstraction**: Pluggable provider abstraction with facial vector match scoring against policy threshold (default 80%).
+- **Statutory Indian Payroll Engine**: Zero floating-point drift calculations using integer minor units (paise). Supports Provident Fund (PF 12%), ESIC (0.75% for gross ≤ INR 21,000), Professional Tax (Maharashtra slabs), and overtime compensation.
+- **PDFKit Payslip & Audit Generator**: Generates vector PDF payslips with employee summaries, attendance tables, earnings/deductions grids, and tamper-proof SHA-256 digital seals.
+- **Excel Muster Attendance Parsing**: Full spreadsheet parsing via `xlsx` with pre-import validation, duplicate detection, and worker/site code resolution.
+- **Tally ERP & Notifications Abstraction**: Out-of-the-box XML/JSON data interchange hooks for Tally accounting software and multichannel notification abstractions (SMS, WhatsApp, Email, In-App).
+- **OpenAPI / Swagger Documentation**: Interactive API testing playground mounted live at `/api-docs`.
+
+---
+
+## 2. Mandatory Folder Structure
 
 ```
 backend/
@@ -42,246 +36,267 @@ backend/
 ├── src/
 │   │
 │   ├── config/
-│   │   ├── database.js          # MongoDB Mongoose connection & lifecycle
-│   │   ├── redis.js             # Redis client initialization (ioredis)
-│   │   ├── s3.js                # AWS S3 / MinIO client configuration
-│   │   └── environment.js       # Typed environment variable registry
+│   │   ├── database.js          # Mongoose connection pooling & lifecycle
+│   │   ├── redis.js             # ioredis client, fallback memory cache, distributed locks
+│   │   ├── s3.js                # AWS S3 / MinIO client & presigned URLs
+│   │   └── environment.js       # Strongly-typed Zod environment validation
 │   │
 │   ├── middleware/
-│   │   ├── authenticate.js      # JWT Bearer token authentication
-│   │   ├── authorize.js         # Role-based access control (RBAC)
-│   │   ├── rateLimiter.js       # Express rate limiting (API, Auth, OTP)
-│   │   ├── upload.js            # Multer file and selfie image uploader
+│   │   ├── authenticate.js      # JWT Bearer verification & user injection
+│   │   ├── authorize.js         # RBAC role & permission guards + business isolation
+│   │   ├── rateLimiter.js       # Redis-backed sliding window rate limiters
+│   │   ├── upload.js            # Multer memory storage & MIME validation
 │   │   ├── validate.js          # Zod schema validation middleware
-│   │   └── errorHandler.js      # Centralized error handler & status formatting
-│   │
-│   ├── routes/                  # Centralized Route Registry & Mounts
-│   │   ├── index.js             # Root router aggregating all resource sub-routers
-│   │   ├── auth.routes.js       # Authentication & user session routes
-│   │   ├── attendance.routes.js # Attendance & geofenced punch-in/out routes
-│   │   ├── site.routes.js       # Worksite configuration & boundary routes
-│   │   ├── supervisor.routes.js # Crew supervision & monitoring routes
-│   │   ├── leave.routes.js      # Leave requests & approval routes
-│   │   ├── payroll.routes.js    # Payroll processing & salary slip routes
-│   │   └── executive.routes.js  # Executive metrics & policy routes
+│   │   └── errorHandler.js      # Centralized error handler (Section 44 JSON envelope)
 │   │
 │   ├── common/
-│   │   ├── ApiError.js          # Standardized operational Error class
-│   │   ├── ApiResponse.js       # Standardized JSON response envelope
+│   │   ├── ApiError.js          # Operational custom error class
+│   │   ├── ApiResponse.js       # Unified response envelope class
 │   │   └── utils/
-│   │       ├── cryptoHash.js    # SHA-256 attendance signature & bcrypt hashing
-│   │       ├── geoSpatial.js    # Haversine distance & Point-in-Polygon checks
-│   │       └── pdfGenerator.js  # Salary slip PDF document generator
+│   │       ├── cryptoHash.js    # SHA-256 ledger chaining, hashing, and masking
+│   │       ├── geoSpatial.js    # Haversine & polygon boundary calculations
+│   │       └── pdfGenerator.js  # PDFKit payslip & master audit renderer
 │   │
 │   ├── modules/
 │   │   │
-│   │   ├── auth/                # Authentication, OTP, JWT token lifecycle
+│   │   ├── auth/                # Phone OTP login, JWT rotation, Users & Roles
 │   │   │   ├── auth.controller.js
 │   │   │   ├── auth.service.js
 │   │   │   ├── auth.validation.js
 │   │   │   ├── auth.routes.js
 │   │   │   └── user.model.js
 │   │   │
-│   │   ├── attendance/          # Geofenced punch-in/out, GPS validation, audit trail
+│   │   ├── attendance/          # Geofenced punch, selfie verification, SHA-256 ledger, shifts
 │   │   │   ├── attendance.controller.js
 │   │   │   ├── attendance.service.js
 │   │   │   ├── attendance.model.js
 │   │   │   ├── attendance.validation.js
 │   │   │   └── attendance.routes.js
 │   │   │
-│   │   ├── site/                # Worksite geofence boundaries & 2dsphere spatial indexing
+│   │   ├── site/                # Sites (2dsphere), Clients, POs, Worker KYC
 │   │   │   ├── site.controller.js
 │   │   │   ├── site.service.js
 │   │   │   ├── site.model.js
 │   │   │   └── site.routes.js
 │   │   │
-│   │   ├── supervisor/          # Crew assignment, live monitoring & supervisor operations
+│   │   ├── supervisor/          # 1:1 Governance handover, bulk attendance, live roster
 │   │   │   ├── supervisor.controller.js
 │   │   │   ├── supervisor.service.js
 │   │   │   └── supervisor.routes.js
 │   │   │
-│   │   ├── leave/               # Leave applications, balances & approval workflows
+│   │   ├── leave/               # Quota balances, applications, approvals
 │   │   │   ├── leave.controller.js
 │   │   │   ├── leave.service.js
 │   │   │   ├── leave.model.js
 │   │   │   └── leave.routes.js
 │   │   │
-│   │   ├── payroll/             # Automated salary processing & slip generation
+│   │   ├── payroll/             # Statutory engine (PF/ESIC/PT), Salary slips, PDFKit
 │   │   │   ├── payroll.controller.js
 │   │   │   ├── payroll.service.js
 │   │   │   ├── payroll.model.js
 │   │   │   └── payroll.routes.js
 │   │   │
-│   │   └── executive/           # Executive dashboards, policy enforcement & audit trail
+│   │   └── executive/           # Multi-business overview, heatmap, approvals, billing, policy
 │   │       ├── executive.controller.js
 │   │       ├── executive.service.js
 │   │       ├── executive.model.js
 │   │       └── executive.routes.js
 │   │
-│   ├── app.js                   # Express application setup & middleware pipeline
-│   └── server.js                # Server bootstrap, DB connection & graceful shutdown
+│   ├── app.js                   # Express app setup, Swagger, Health probes
+│   └── server.js                # Server entrypoint with graceful shutdown
+│
+├── tests/                       # Unit, Security, and Integration Test Suite
+│   ├── unit/                    # CryptoHash, GeoSpatial, and Payroll engine tests
+│   └── integration/             # Auth lifecycle, Security isolation, and API tests
 │
 ├── package.json
 ├── .env.example
 ├── .gitignore
-├── Dockerfile
-├── docker-compose.yml
+├── Dockerfile                   # Multi-stage production container
+├── docker-compose.yml           # App + MongoDB 7 + Redis 7 + MinIO
 ├── PROJECT_STRUCTURE.txt
 └── README.md
 ```
 
 ---
 
-## 👥 System Roles & Permissions
+## 3. Prerequisites & Installation
 
-| Role | Description | Access Scope |
-| :--- | :--- | :--- |
-| `EMPLOYEE` | Field worker or employee | Punch-in/out within geofence, view personal attendance, apply for leaves, view personal payroll slips. |
-| `SUPERVISOR` | Field supervisor | Supervise assigned crew, live attendance monitoring, review leaves, manual attendance overrides, create/edit sites. |
-| `SUPER_SUPERVISOR` | Executive / Org Director | Full system control: process monthly payroll, delete sites, executive dashboard analytics, geofence policy management, full audit trail. |
+### Requirements
+- **Node.js**: v20+ LTS (Tested on Node v20 & v26)
+- **MongoDB**: v7.0+ (Replica Set recommended for transactions)
+- **Redis**: v7.0+
+- **MinIO / AWS S3**: For document and payslip storage
 
----
-
-## 🔒 Security & Geofence Architecture
-
-1. **Geofencing Engine**:
-   - Uses the **Haversine Great-Circle Formula** and MongoDB **`2dsphere` spatial indexing**.
-   - Validates that an employee is strictly within the radius of their assigned work site before allowing punch-in.
-   - Supports Polygon geofence verification via ray-casting algorithms.
-2. **Cryptographic Tamper-Proofing**:
-   - Every punch-in and punch-out generates a unique **SHA-256 digital hash signature** incorporating `userId`, `siteId`, `coordinates`, `timestamp`, and `deviceId`.
-3. **Authentication & Session Security**:
-   - Access tokens (short-lived, 15 min) and Refresh tokens (long-lived, 7 days) signed using JWT.
-   - Passwords hashed with `bcryptjs` using 12 salt rounds.
-   - OTP support with time expiration and rate-limiting.
-4. **Network & HTTP Security**:
-   - `helmet` security headers.
-   - Strict CORS policy.
-   - `express-rate-limit` guards against brute-force and DDoS attacks.
-   - `zod` input schema validation sanitizes and validates incoming payloads.
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js (v18.0.0 or higher)
-- MongoDB (v6.0 or higher)
-- Redis (Optional, for production caching)
-
-### 1. Installation
+### Quick Installation
 
 ```bash
+# Clone and enter backend directory
 cd backend
+
+# Install production and development dependencies
 npm install
 ```
 
-### 2. Environment Setup
+---
 
-Create `.env` based on `.env.example`:
+## 4. Environment Configuration
+
+Copy `.env.example` to `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Configure your `.env` variables:
-```env
-PORT=5000
+Key environment options:
+
+```ini
 NODE_ENV=development
-MONGODB_URI=mongodb://localhost:27017/geowork_db
+PORT=5000
+MONGODB_URI=mongodb://localhost:27017/pruthviraj_db
 REDIS_URL=redis://localhost:6379
-JWT_ACCESS_SECRET=your_jwt_access_secret_key
-JWT_REFRESH_SECRET=your_jwt_refresh_secret_key
+
+JWT_ACCESS_SECRET=pruthviraj_access_secret_super_secure_key_2026
+JWT_REFRESH_SECRET=pruthviraj_refresh_secret_super_secure_key_2026
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
-OTP_EXPIRY_MINUTES=5
-OTP_RATE_LIMIT=3
-CORS_ORIGIN=*
+
+OTP_TTL_SECONDS=300
+OTP_MAX_VERIFY_ATTEMPTS=3
+ALLOW_DEV_OTP=true
+
+S3_ENDPOINT=http://localhost:9000
+S3_REGION=ap-south-1
+S3_BUCKET=pruthviraj-enterprise-storage
+S3_ACCESS_KEY_ID=minioadmin
+S3_SECRET_ACCESS_KEY=minioadmin
+S3_FORCE_PATH_STYLE=true
+
+BIOMETRIC_THRESHOLD=80.0
+DEFAULT_GEOFENCE_RADIUS_METERS=50
+GPS_ACCURACY_THRESHOLD_METERS=20
 ```
 
-### 3. Running the Server
+---
+
+## 5. Running the Application
+
+### 1. Seed Initial Data (Section 64)
+Populates both businesses (*Pruthviraj Enterprises* & *Pruthviraj Facilities Pvt. Ltd.*), owner, supervisors, operatives, clients, sites with 2dsphere centroids, and bank accounts:
 
 ```bash
-# Development mode with hot-reload
-npm run dev
+npm run seed
+```
 
-# Production mode
+### 2. Run Development Server
+```bash
+npm run dev
+```
+
+### 3. Run Production Server
+```bash
 npm start
 ```
 
-### 4. Running with Docker Compose
-
-To launch Backend, MongoDB, and Redis with a single command:
+### 4. Run Test Suite
+Runs unit, security, and integration tests using Vitest:
 
 ```bash
-docker-compose up --build
+npm test
+```
+
+### 5. Code Quality & Build Checks
+```bash
+npm run lint
+npm run build
 ```
 
 ---
 
-## 📡 API Endpoints Reference (`/api/v1`)
+## 6. Docker & Container Deployment
 
-### Health Check
-- `GET /health` - System health check
+Start the complete production stack (Node.js API, MongoDB 7, Redis 7, MinIO with persistent volumes):
 
-### Authentication (`/api/v1/auth`)
-- `POST /register` - Register new user account
-- `POST /login` - Login with email and password
-- `POST /otp/request` - Request mobile OTP
-- `POST /otp/verify` - Verify OTP and receive JWT tokens
-- `POST /refresh-token` - Refresh expired access token
-- `GET /me` - Get current user profile (Authenticated)
-- `POST /logout` - Invalidate session and logout (Authenticated)
+```bash
+docker-compose up --build -d
+```
 
-### Attendance (`/api/v1/attendance`)
-- `POST /punch-in` - Record punch-in within geofence (Employee)
-- `POST /punch-out` - Record punch-out (Employee)
-- `GET /me` - Retrieve my attendance history (Employee)
-- `GET /today` - Check today's punch status (Employee)
-- `GET /` - List all attendance records (Supervisor / Executive)
-- `POST /override` - Manual attendance correction (Supervisor / Executive)
-
-### Sites (`/api/v1/sites`)
-- `GET /` - List all work sites with pagination
-- `GET /:id` - Get site details
-- `GET /nearby` - Find sites near GPS coordinates
-- `POST /:siteId/verify-geofence` - Test if coordinate is inside geofence
-- `POST /` - Create new work site (Supervisor / Executive)
-- `PUT /:id` - Update work site (Supervisor / Executive)
-- `DELETE /:id` - Delete work site (Executive only)
-
-### Supervisor Operations (`/api/v1/supervisors`)
-- `GET /crew` - List assigned crew members
-- `GET /sites` - List supervised work sites
-- `GET /attendance/live` - Real-time crew attendance tracking
-- `GET /dashboard` - Supervisor dashboard overview metrics
-- `POST /assign` - Assign employee to site and crew
-- `PUT /leaves/:leaveId/review` - Approve or reject leave request
-
-### Leaves (`/api/v1/leaves`)
-- `POST /` - Submit leave application (Employee)
-- `GET /me` - View personal leave history (Employee)
-- `GET /balance` - View leave quota and balance (Employee)
-- `PUT /:id/cancel` - Cancel pending leave (Employee)
-- `GET /` - List all leave applications (Supervisor / Executive)
-- `PUT /:id/status` - Update leave status (Supervisor / Executive)
-
-### Payroll (`/api/v1/payroll`)
-- `GET /me` - View personal payroll records (Employee)
-- `GET /:id/slip` - Download official salary slip (Employee / Supervisor / Executive)
-- `GET /` - List all organization payroll records (Supervisor / Executive)
-- `POST /process` - Calculate and process monthly salary (Executive only)
-- `PUT /:id/pay` - Mark salary as disbursed (Executive only)
-
-### Executive (`/api/v1/executive`)
-- `GET /dashboard` - Organization-level dashboard metrics (Executive only)
-- `GET /analytics/attendance` - Workforce attendance trends & compliance (Executive only)
-- `GET /analytics/payroll` - Financial payroll analytics (Executive only)
-- `GET /policy` - Retrieve geofence and operations policy (Executive only)
-- `PUT /policy` - Update geofence policy and append audit log (Executive only)
-- `GET /audit-trail` - View organization operational audit logs (Executive only)
+Check logs:
+```bash
+docker-compose logs -f app
+```
 
 ---
 
-## 📄 License
-ISC License. Built for enterprise geo-fenced workforce management.
+## 7. Interactive API Documentation (OpenAPI / Swagger)
+
+Once the backend is running, open your browser and navigate to:
+```
+http://localhost:5000/api-docs
+```
+
+---
+
+## 8. Authentication & RBAC
+
+### Primary Mobile Flow
+1. **Send OTP**:
+   `POST /api/v1/auth/otp/send`
+   ```json
+   { "phoneNumber": "+919800000001" }
+   ```
+2. **Verify OTP**:
+   `POST /api/v1/auth/otp/verify`
+   ```json
+   { "phoneNumber": "+919800000001", "otpCode": "123456" }
+   ```
+   *Returns `{ accessToken, refreshToken, user }`.*
+3. **Token Rotation**:
+   `POST /api/v1/auth/refresh`
+   ```json
+   { "refreshToken": "..." }
+   ```
+4. **Logout & Session Revocation**:
+   `POST /api/v1/auth/logout`
+
+### User Roles
+- `OWNER`: Full unrestricted access to both businesses.
+- `HR`: Worker KYC, leave approvals, attendance muster, payroll preparation.
+- `ACCOUNTS`: Billing, invoices, expenses, banking, payroll approvals.
+- `MANAGER`: Site oversight, worker rosters, operational analytics.
+- `SUPER_SUPERVISOR`: Multi-plant supervisor governance, leave approvals, shifts.
+- `SUPERVISOR`: 1-to-1 site governance, crew roster, bulk marking, manual overrides.
+- `STAFF` / `EMPLOYEE`: Geofenced punch, shift ledger, leave requests, payslip PDF download.
+
+---
+
+## 9. Error Handling Specification
+
+Every operational error produces a consistent JSON envelope (Section 44):
+
+```json
+{
+  "success": false,
+  "status": 422,
+  "error": "GEOFENCE_PERIMETER_BREACH",
+  "message": "Physical presence verification failed: Worker is 320m away from site perimeter (Allowed radius: 50m).",
+  "details": {
+    "distanceMeters": 320.0,
+    "maxRadiusMeters": 50.0,
+    "siteId": "650000000000000000000001"
+  },
+  "timestamp": "2026-10-06T08:15:00.000Z",
+  "requestId": "req_1728202500000"
+}
+```
+
+---
+
+## 10. Troubleshooting
+
+| Issue | Resolution |
+|---|---|
+| `ECONNREFUSED 127.0.0.1:27017` | Ensure MongoDB is running locally (`mongod`) or start via `docker-compose up -d mongodb`. |
+| `Redis server offline` | The backend automatically activates its in-memory fallback store without failing requests. Start Redis via `docker-compose up -d redis` for distributed persistence. |
+| `GEOFENCE_PERIMETER_BREACH` | Ensure punch coordinates fall within the site's radius (`geofenceRadiusMeters`). Check `siteCentroid` in MongoDB. |
+| `TOKEN_REUSE_DETECTED` | A revoked refresh token was submitted. All user sessions have been revoked for security; re-login via phone OTP. |

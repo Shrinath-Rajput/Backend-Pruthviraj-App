@@ -1,18 +1,78 @@
 import mongoose from "mongoose";
 
-const leaveSchema = new mongoose.Schema(
+/**
+ * Leave Balance Model (Section 26)
+ */
+const leaveBalanceSchema = new mongoose.Schema(
   {
-    employeeId: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
       index: true,
     },
+    businessId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    year: {
+      type: Number,
+      required: true,
+      default: () => new Date().getFullYear(),
+      index: true,
+    },
+    casualLeave: {
+      total: { type: Number, default: 12 },
+      used: { type: Number, default: 0 },
+      remaining: { type: Number, default: 12 },
+    },
+    sickLeave: {
+      total: { type: Number, default: 10 },
+      used: { type: Number, default: 0 },
+      remaining: { type: Number, default: 10 },
+    },
+    earnedLeave: {
+      total: { type: Number, default: 15 },
+      used: { type: Number, default: 0 },
+      remaining: { type: Number, default: 15 },
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+leaveBalanceSchema.index({ userId: 1, year: 1 }, { unique: true });
+
+export const LeaveBalance = mongoose.model("LeaveBalance", leaveBalanceSchema);
+
+/**
+ * Leave Application Model (Section 26)
+ */
+const leaveApplicationSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+    businessId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    siteId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Site",
+      default: null,
+      index: true,
+    },
     leaveType: {
       type: String,
-      enum: ["CASUAL", "SICK", "EARNED", "UNPAID"],
+      enum: ["CASUAL", "SICK", "EARNED"],
       required: true,
-      default: "CASUAL",
     },
     startDate: {
       type: Date,
@@ -25,21 +85,29 @@ const leaveSchema = new mongoose.Schema(
     totalDays: {
       type: Number,
       required: true,
-      min: [0.5, "Minimum leave duration is 0.5 days"],
+      min: [1, "Leave duration must be at least 1 day"],
     },
     reason: {
       type: String,
-      required: [true, "Reason for leave is required"],
+      required: true,
       trim: true,
-      maxlength: 500,
     },
     status: {
       type: String,
-      enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
+      enum: ["PENDING", "APPROVED", "REJECTED"],
       default: "PENDING",
       index: true,
     },
-    reviewedBy: {
+    appliedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    reviewedBySupervisorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    replacementWorkerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
@@ -51,11 +119,6 @@ const leaveSchema = new mongoose.Schema(
     reviewComment: {
       type: String,
       default: null,
-      trim: true,
-    },
-    documentUrl: {
-      type: String,
-      default: null,
     },
   },
   {
@@ -63,8 +126,12 @@ const leaveSchema = new mongoose.Schema(
   }
 );
 
-leaveSchema.index({ employeeId: 1, status: 1 });
-leaveSchema.index({ startDate: 1, endDate: 1 });
+leaveApplicationSchema.index({ userId: 1, status: 1 });
+leaveApplicationSchema.index({ businessId: 1, status: 1 });
 
-export const Leave = mongoose.model("Leave", leaveSchema);
-export default Leave;
+export const LeaveApplication = mongoose.model("LeaveApplication", leaveApplicationSchema);
+
+export default {
+  LeaveBalance,
+  LeaveApplication,
+};

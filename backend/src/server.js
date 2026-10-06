@@ -1,86 +1,59 @@
 import app from "./app.js";
 import environment from "./config/environment.js";
 import { connectDatabase, disconnectDatabase } from "./config/database.js";
-import { connectRedis } from "./config/redis.js";
+import { connectRedis, disconnectRedis } from "./config/redis.js";
 
 let server;
 
-/**
- * Handle uncaught exceptions before server initialization
- */
-process.on("uncaughtException", (error) => {
-  console.error("[CRITICAL] Uncaught Exception occurred:", error);
-  process.exit(1);
-});
-
-/**
- * Start the HTTP Server and connect infrastructure services
- */
 const startServer = async () => {
   try {
-    // 1. Connect to MongoDB using Mongoose
-    console.log("[Bootstrap] Connecting to database...");
+    console.log("=================================================");
+    console.log("   PRUTHVIRAJ WORKFORCE & BUSINESS SYSTEM");
+    console.log(`   Environment: ${environment.NODE_ENV.toUpperCase()}`);
+    console.log("=================================================");
+
+    // 1. Connect MongoDB
     await connectDatabase();
 
-    // 2. Optional connect to Redis for caching & rate limiting
-    try {
-      await connectRedis();
-    } catch (redisErr) {
-      console.warn(`[Bootstrap] Redis initialization warning: ${redisErr.message}`);
-    }
+    // 2. Connect Redis
+    await connectRedis();
 
-    // 3. Start Express Server
-    const PORT = environment.PORT;
-    server = app.listen(PORT, () => {
-      console.log(`========================================================`);
-      console.log(`  GeoWork Backend Server is Running!`);
-      console.log(`  Port: ${PORT}`);
-      console.log(`  Environment: ${environment.NODE_ENV}`);
-      console.log(`  Health Check: http://localhost:${PORT}/health`);
-      console.log(`  API Base: http://localhost:${PORT}/api/v1`);
-      console.log(`========================================================`);
+    // 3. Start HTTP Server
+    server = app.listen(environment.PORT, () => {
+      console.log(`🚀 Server listening on port ${environment.PORT}`);
+      console.log(`📖 API Documentation available at: http://localhost:${environment.PORT}/api-docs`);
+      console.log(`🩺 Health check available at: http://localhost:${environment.PORT}/health`);
     });
   } catch (error) {
-    console.error("[Bootstrap Error] Failed to start server:", error);
+    console.error(`❌ Critical bootstrap failure: ${error.message}`);
     process.exit(1);
   }
 };
 
 /**
- * Handle unhandled promise rejections
+ * Graceful Shutdown Handler (Section 58)
  */
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("[CRITICAL] Unhandled Rejection at:", promise, "reason:", reason);
-  if (server) {
-    server.close(() => {
-      process.exit(1);
-    });
-  } else {
-    process.exit(1);
-  }
-});
-
-/**
- * Graceful termination handler
- */
-const handleGracefulShutdown = async (signal) => {
-  console.log(`\n[Shutdown] Received ${signal}. Initiating graceful shutdown...`);
+const gracefulShutdown = async (signal) => {
+  console.log(`\n[System] Received ${signal}. Starting graceful shutdown...`);
 
   if (server) {
     server.close(async () => {
-      console.log("[Shutdown] HTTP server closed.");
+      console.log("[System] HTTP server stopped accepting incoming connections.");
+
       try {
+        await disconnectRedis();
         await disconnectDatabase();
+        console.log("[System] All resources successfully released. Exiting process.");
+        process.exit(0);
       } catch (err) {
-        console.error("[Shutdown Error] Error during DB disconnect:", err);
+        console.error(`[System Error] Error during shutdown: ${err.message}`);
+        process.exit(1);
       }
-      console.log("[Shutdown] Graceful shutdown completed.");
-      process.exit(0);
     });
 
-    // Force close after 10s timeout
+    // Force exit if teardown takes longer than 10 seconds
     setTimeout(() => {
-      console.error("[Shutdown] Forcefully terminating server after timeout.");
+      console.error("[System] Forced shutdown after timeout.");
       process.exit(1);
     }, 10000);
   } else {
@@ -88,8 +61,18 @@ const handleGracefulShutdown = async (signal) => {
   }
 };
 
-process.on("SIGTERM", () => handleGracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => handleGracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-// Start application
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[Fatal] Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[Fatal] Uncaught Exception:", error);
+  process.exit(1);
+});
+
 startServer();
+
+export default server;

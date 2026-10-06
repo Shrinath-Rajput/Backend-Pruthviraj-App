@@ -2,80 +2,61 @@ import leaveService from "./leave.service.js";
 import ApiResponse from "../../common/ApiResponse.js";
 
 export class LeaveController {
-  async applyLeave(req, res, next) {
+  async getBalances(req, res, next) {
     try {
-      const leave = await leaveService.applyLeave({
-        employeeId: req.user.id,
-        ...req.body,
-      });
-      return res
-        .status(201)
-        .json(ApiResponse.created(leave, "Leave application submitted successfully."));
+      const balances = await leaveService.getBalances(req.user.id, req.user.businessIds?.[0]);
+      return res.status(200).json(ApiResponse.success(balances));
     } catch (error) {
       next(error);
     }
   }
 
-  async getMyLeaves(req, res, next) {
+  async getMyRequests(req, res, next) {
     try {
-      const result = await leaveService.getLeaveHistory({
-        employeeId: req.user.id,
+      const requests = await leaveService.getMyRequests(req.user.id);
+      return res.status(200).json(ApiResponse.success(requests));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async apply(req, res, next) {
+    try {
+      const result = await leaveService.applyLeave({
+        userId: req.user.id,
+        leaveType: req.body.leaveType,
+        startDate: req.body.startDate,
+        endDate: req.body.endDate,
+        reason: req.body.reason,
+        allowedBusinessIds: req.allowedBusinessIds,
+      });
+      return res.status(201).json(ApiResponse.created(result, "Leave application submitted."));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async list(req, res, next) {
+    try {
+      const result = await leaveService.listLeaves({
         ...req.query,
+        allowedBusinessIds: req.allowedBusinessIds,
       });
-      return res
-        .status(200)
-        .json(ApiResponse.success(result, "Leave history retrieved."));
+      return res.status(200).json(ApiResponse.list(result.leaves, result.pagination));
     } catch (error) {
       next(error);
     }
   }
 
-  async getMyLeaveBalance(req, res, next) {
+  async review(req, res, next) {
     try {
-      const balance = await leaveService.getLeaveBalance(req.user.id);
-      return res
-        .status(200)
-        .json(ApiResponse.success(balance, "Leave balance retrieved."));
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async cancelLeave(req, res, next) {
-    try {
-      const leave = await leaveService.cancelLeave(req.params.id, req.user.id);
-      return res
-        .status(200)
-        .json(ApiResponse.success(leave, "Leave request cancelled."));
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getAllLeaves(req, res, next) {
-    try {
-      const result = await leaveService.getLeaveHistory(req.query);
-      return res
-        .status(200)
-        .json(ApiResponse.success(result, "All leave requests retrieved."));
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async updateLeaveStatus(req, res, next) {
-    try {
-      const { id } = req.params;
-      const { status, reviewComment } = req.body;
-      const updated = await leaveService.updateLeaveStatus({
-        leaveId: id,
-        status,
-        reviewedBy: req.user.id,
-        reviewComment,
+      const reviewed = await leaveService.reviewLeave(req.params.id, {
+        status: req.body.status,
+        reviewComment: req.body.reviewComment,
+        reviewerId: req.user.id,
+        allowedBusinessIds: req.allowedBusinessIds,
       });
-      return res
-        .status(200)
-        .json(ApiResponse.success(updated, `Leave status updated to ${status}.`));
+      return res.status(200).json(ApiResponse.success(reviewed, "Leave review recorded."));
     } catch (error) {
       next(error);
     }

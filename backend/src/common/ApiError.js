@@ -1,20 +1,26 @@
 /**
- * Custom operational API Error class for consistent REST API error handling.
+ * Standard Operational API Error Class
  */
-class ApiError extends Error {
+export class ApiError extends Error {
   /**
    * @param {number} statusCode - HTTP status code
-   * @param {string} message - Human-readable error description
-   * @param {Array<any>} [errors=[]] - Detailed validation or contextual error items
-   * @param {string} [stack=""] - Optional error stack trace
+   * @param {string} message - Human-readable error message
+   * @param {string} [errorCode="API_ERROR"] - Standard machine-readable error code
+   * @param {Object|Array} [details={}] - Contextual details (e.g. breach info, validation items)
+   * @param {string} [stack=""] - Stack trace
    */
-  constructor(statusCode, message = "Something went wrong", errors = [], stack = "") {
+  constructor(
+    statusCode = 500,
+    message = "Internal server error",
+    errorCode = "INTERNAL_SERVER_ERROR",
+    details = {},
+    stack = ""
+  ) {
     super(message);
+    this.name = "ApiError";
     this.statusCode = statusCode;
-    this.data = null;
-    this.message = message;
-    this.success = false;
-    this.errors = errors;
+    this.errorCode = errorCode;
+    this.details = details;
     this.isOperational = true;
 
     if (stack) {
@@ -24,32 +30,56 @@ class ApiError extends Error {
     }
   }
 
-  static badRequest(message = "Bad request", errors = []) {
-    return new ApiError(400, message, errors);
+  static badRequest(message = "Bad Request", details = {}, errorCode = "BAD_REQUEST") {
+    return new ApiError(400, message, errorCode, details);
   }
 
-  static unauthorized(message = "Unauthorized access", errors = []) {
-    return new ApiError(401, message, errors);
+  static unauthorized(message = "Unauthorized access", details = {}, errorCode = "UNAUTHORIZED") {
+    return new ApiError(401, message, errorCode, details);
   }
 
-  static forbidden(message = "Forbidden resource", errors = []) {
-    return new ApiError(403, message, errors);
+  static forbidden(message = "Forbidden resource", details = {}, errorCode = "FORBIDDEN") {
+    return new ApiError(403, message, errorCode, details);
   }
 
-  static notFound(message = "Resource not found", errors = []) {
-    return new ApiError(404, message, errors);
+  static notFound(message = "Resource not found", details = {}, errorCode = "NOT_FOUND") {
+    return new ApiError(404, message, errorCode, details);
   }
 
-  static conflict(message = "Resource conflict", errors = []) {
-    return new ApiError(409, message, errors);
+  static conflict(message = "Resource conflict", details = {}, errorCode = "CONFLICT") {
+    return new ApiError(409, message, errorCode, details);
   }
 
-  static unprocessable(message = "Unprocessable entity", errors = []) {
-    return new ApiError(422, message, errors);
+  static unprocessable(
+    message = "Unprocessable entity",
+    details = {},
+    errorCode = "UNPROCESSABLE_ENTITY"
+  ) {
+    return new ApiError(422, message, errorCode, details);
   }
 
-  static internal(message = "Internal server error", errors = []) {
-    return new ApiError(500, message, errors);
+  static geofenceBreach(
+    message = "Physical presence verification failed.",
+    details = {},
+    errorCode = "GEOFENCE_PERIMETER_BREACH"
+  ) {
+    return new ApiError(422, message, errorCode, details);
+  }
+
+  static tooManyRequests(
+    message = "Too many requests. Please try again later.",
+    details = {},
+    errorCode = "RATE_LIMIT_EXCEEDED"
+  ) {
+    return new ApiError(429, message, errorCode, details);
+  }
+
+  static internal(
+    message = "Internal server error",
+    details = {},
+    errorCode = "INTERNAL_SERVER_ERROR"
+  ) {
+    return new ApiError(500, message, errorCode, details);
   }
 }
 

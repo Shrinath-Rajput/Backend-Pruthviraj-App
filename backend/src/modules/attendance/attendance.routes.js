@@ -1,47 +1,58 @@
 import { Router } from "express";
 import attendanceController from "./attendance.controller.js";
-import {
-  punchInSchema,
-  punchOutSchema,
-  manualOverrideSchema,
-} from "./attendance.validation.js";
-import { validate } from "../../middleware/validate.js";
 import { authenticate } from "../../middleware/authenticate.js";
-import { authorize, ROLES } from "../../middleware/authorize.js";
+import { authorize, authorizeBusiness } from "../../middleware/authorize.js";
+import { singleUpload } from "../../middleware/upload.js";
+import { validate } from "../../middleware/validate.js";
+import {
+  punchAttendanceSchema,
+  createShiftSchema,
+  allocateShiftSchema,
+} from "./attendance.validation.js";
 
 const router = Router();
 
-// All attendance routes require authentication
 router.use(authenticate);
+router.use(authorizeBusiness());
 
-// Employee Attendance Endpoints
+// Attendance Punch (Section 19)
 router.post(
-  "/punch-in",
-  validate(punchInSchema),
-  attendanceController.punchIn
+  "/punch",
+  singleUpload("selfiePhoto"),
+  validate(punchAttendanceSchema),
+  attendanceController.punch
+);
+
+// Attendance Status & History (Section 23)
+router.get("/status/today", attendanceController.getTodayStatus);
+router.get("/history/monthly", attendanceController.getMonthlyHistory);
+router.get("/export/ledger", attendanceController.exportLedger);
+
+// Ledger list and detail
+router.get("/", attendanceController.listAttendance);
+router.get("/:id", attendanceController.getAttendanceById);
+
+// Excel Muster Import (Section 24)
+router.post(
+  "/import/excel",
+  authorize(["SUPERVISOR", "SUPER_SUPERVISOR", "HR", "OWNER"]),
+  singleUpload("file"),
+  attendanceController.importExcel
+);
+
+// Shift Management (Section 25)
+router.post(
+  "/shifts",
+  authorize(["OWNER", "HR", "MANAGER", "SUPER_SUPERVISOR"]),
+  validate(createShiftSchema),
+  attendanceController.createShift
 );
 
 router.post(
-  "/punch-out",
-  validate(punchOutSchema),
-  attendanceController.punchOut
-);
-
-router.get("/me", attendanceController.getMyAttendance);
-router.get("/today", attendanceController.getTodayStatus);
-
-// Supervisor & Higher Operations
-router.get(
-  "/",
-  authorize(ROLES.SUPERVISOR, ROLES.SUPER_SUPERVISOR),
-  attendanceController.getAllAttendance
-);
-
-router.post(
-  "/override",
-  authorize(ROLES.SUPERVISOR, ROLES.SUPER_SUPERVISOR),
-  validate(manualOverrideSchema),
-  attendanceController.manualOverride
+  "/shifts/allocate",
+  authorize(["SUPERVISOR", "SUPER_SUPERVISOR", "HR", "OWNER"]),
+  validate(allocateShiftSchema),
+  attendanceController.allocateShift
 );
 
 export default router;

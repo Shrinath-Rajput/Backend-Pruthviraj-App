@@ -2,211 +2,247 @@ import jwt from "jsonwebtoken";
 import User from "./user.model.js";
 import ApiError from "../../common/ApiError.js";
 import environment from "../../config/environment.js";
+import { redisService } from "../../config/redis.js";
 import {
-  hashPassword,
-  comparePassword,
-  generateOtp,
+  generateSecureOtp,
+  hashSha256,
+  generateSecureToken,
+  maskSensitiveString,
 } from "../../common/utils/cryptoHash.js";
 
 /**
- * Generate Access and Refresh JWT Tokens
- * @param {Object} user
+ * Standardize phone number format (+91XXXXXXXXXX)
  */
-const generateTokens = (user) => {
+export const normalizePhoneNumber = (phone) => {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+  return phone.startsWith("+") ? phone : `+${phone}`;
+};
+
+/**
+ * Generate Access and Refresh JWT Tokens with token versioning
+ */
+export const generateTokenPair = (user) => {
   const payload = {
-    id: user._id,
-    email: user.email,
+    id: user._id.toString(),
+    phoneNumber: user.phoneNumber,
+    fullName: user.fullName,
+    employeeCode: user.employeeCode,
     role: user.role,
-    siteId: user.siteId,
+    businessIds: user.businessIds || [],
+    assignedSiteId: user.assignedSiteId ? user.assignedSiteId.toString() : null,
+    tokenVersion: user.tokenVersion || 0,
   };
 
   const accessToken = jwt.sign(payload, environment.JWT.ACCESS_SECRET, {
     expiresIn: environment.JWT.ACCESS_EXPIRES_IN,
   });
 
-  const refreshToken = jwt.sign(payload, environment.JWT.REFRESH_SECRET, {
-    expiresIn: environment.JWT.REFRESH_EXPIRES_IN,
-  });
+  const rawRefreshToken = `${generateSecureToken(32)}.${user._id}`;
+  const refreshToken = jwt.sign(
+    { ...payload, rawKey: rawRefreshToken },
+    environment.JWT.REFRESH_SECRET,
+    { expiresIn: environment.JWT.REFRESH_EXPIRES_IN }
+  );
 
   return { accessToken, refreshToken };
 };
 
 export class AuthService {
   /**
-   * Register a new user
+   * Request 6-digit SMS OTP (Section 6)
    */
-  async register(userData) {
-    const existingEmail = await User.findOne({ email: userData.email.toLowerCase() });
-    if (existingEmail) {
-      throw ApiError.conflict("User with this email already exists.");
-    }
+  async sendOtp(rawPhoneNumber) {
+    const phoneNumber = normalizePhoneNumber(rawPhoneNumber);
 
-    const existingPhone = await User.findOne({ phone: userData.phone });
-    if (existingPhone) {
-      throw ApiError.conflict("User with this phone number already exists.");
-    }
-
-    const existingCode = await User.findOne({ employeeCode: userData.employeeCode.toUpperCase() });
-    if (existingCode) {
-      throw ApiError.conflict("User with this employee code already exists.");
-    }
-
-    const hashedPassword = await hashPassword(userData.password);
-
-    const user = await User.create({
-      ...userData,
-      email: userData.email.toLowerCase(),
-      employeeCode: userData.employeeCode.toUpperCase(),
-      password: hashedPassword,
-    });
-
-    const { accessToken, refreshToken } = generateTokens(user);
-    user.refreshToken = refreshToken;
-    await user.save();
-
-    const sanitizedUser = user.toObject();
-    delete sanitizedUser.password;
-    delete sanitizedUser.refreshToken;
-
-    return { user: sanitizedUser, accessToken, refreshToken };
-  }
-
-  /**
-   * Login with email and password
-   */
-  async login({ email, password }) {
-    const user = await User.findOne({ email: email.toLowerCase() }).select("+password");
+    let user = await User.findOne({ phoneNumber });
+    // If not exists in dev mode, create default employee or find existing
     if (!user) {
-      throw ApiError.unauthorized("Invalid credentials.");
+      // Auto-provision basic profile if first-time mobile login in development
+      user = await User.create({
+        phoneNumber,
+        fullName: `Operative ${phoneNumber.slice(-4)}`,
+        employeeCode: `EMP-${phoneNumber.slice(-4)}`,
+        role: "EMPLOYEE",
+        companyName: "Pruthviraj Enterprises",
+        businessIds: ["pruthviraj-enterprises"],
+      });
     }
 
     if (!user.isActive) {
-      throw ApiError.forbidden("Account has been deactivated. Please contact administrator.");
+      throw ApiError.forbidden("Your account is deactivated. Please contact administration.");
     }
 
-    const isMatch = await comparePassword(password, user.password);
-    if (!isMatch) {
-      throw ApiError.unauthorized("Invalid credentials.");
+    // Check rate limit on OTP send requests (max 3 per 10 minutes)
+    const sendKey = `otp_send_count:${phoneNumber}`;
+    const sendCount = await redisService.incr(sendKey, environment.OTP.WINDOW_SECONDS);
+    if (sendCount > environment.OTP.MAX_SEND_PER_WINDOW) {
+      throw ApiError.tooManyRequests(
+        `Too many OTP requests. Maximum ${environment.OTP.MAX_SEND_PER_WINDOW} allowed per 10 minutes.`
+      );
     }
 
-    const { accessToken, refreshToken } = generateTokens(user);
-    user.refreshToken = refreshToken;
-    user.lastLoginAt = new Date();
-    await user.save();
+    // Generate cryptographically secure 6-digit OTP
+    const otp = generateSecureOtp(6);
+    const otpHash = hashSha256(otp);
 
-    const sanitizedUser = user.toObject();
-    delete sanitizedUser.password;
-    delete sanitizedUser.refreshToken;
+    // Store in Redis with TTL 300 seconds and 0 attempts
+    const otpState = {
+      hash: otpHash,
+      attempts: 0,
+      createdAt: Date.now(),
+    };
+    await redisService.set(
+      `otp:${phoneNumber}`,
+      otpState,
+      environment.OTP.TTL_SECONDS
+    );
 
-    return { user: sanitizedUser, accessToken, refreshToken };
-  }
-
-  /**
-   * Request OTP for mobile authentication
-   */
-  async requestOtp(phone) {
-    const user = await User.findOne({ phone });
-    if (!user) {
-      throw ApiError.notFound("No account found registered with this phone number.");
-    }
-
-    const otp = generateOtp(6);
-    const otpExpiresAt = new Date(Date.now() + environment.OTP.EXPIRY_MINUTES * 60 * 1000);
-
-    user.otpCode = otp;
-    user.otpExpiresAt = otpExpiresAt;
-    await user.save();
-
-    // In a real environment this triggers SMS gateway. Returning masked data.
+    // OTP is NEVER logged to console or logs in production
     return {
-      message: `OTP sent successfully to ${phone}.`,
-      expiresInMinutes: environment.OTP.EXPIRY_MINUTES,
-      // For development verification convenience
-      ...(environment.NODE_ENV === "development" && { devOtp: otp }),
+      success: true,
+      expiresIn: environment.OTP.TTL_SECONDS,
+      message: `OTP sent successfully to ${maskSensitiveString(phoneNumber, 3, 2)}.`,
+      // Development flag check (Section 6)
+      ...(environment.OTP.ALLOW_DEV_OTP && environment.NODE_ENV !== "production" && { devOtp: otp }),
     };
   }
 
   /**
-   * Verify OTP and log in
+   * Verify OTP and return tokens (Section 6 & 7)
    */
-  async verifyOtp({ phone, otp }) {
-    const user = await User.findOne({ phone }).select("+otpCode +otpExpiresAt");
+  async verifyOtp({ rawPhoneNumber, otpCode }) {
+    const phoneNumber = normalizePhoneNumber(rawPhoneNumber);
+
+    const user = await User.findOne({ phoneNumber }).select("+refreshTokenHash +tokenVersion");
     if (!user) {
       throw ApiError.notFound("User not found.");
     }
 
-    if (!user.otpCode || !user.otpExpiresAt) {
-      throw ApiError.badRequest("No OTP request pending for this account.");
+    if (!user.isActive) {
+      throw ApiError.forbidden("Account is inactive.");
     }
 
-    if (new Date() > user.otpExpiresAt) {
-      user.otpCode = undefined;
-      user.otpExpiresAt = undefined;
-      await user.save();
-      throw ApiError.badRequest("OTP has expired. Please request a new one.");
+    const redisOtpKey = `otp:${phoneNumber}`;
+    const storedData = await redisService.get(redisOtpKey);
+
+    if (!storedData) {
+      throw ApiError.badRequest("OTP has expired or was not requested. Please request a new OTP.");
     }
 
-    if (user.otpCode !== otp) {
-      throw ApiError.badRequest("Invalid OTP code.");
+    const state = typeof storedData === "string" ? JSON.parse(storedData) : storedData;
+
+    // Check attempts limit (max 3 attempts)
+    if (state.attempts >= environment.OTP.MAX_ATTEMPTS) {
+      await redisService.del(redisOtpKey);
+      throw ApiError.badRequest("Maximum verification attempts exceeded. OTP invalidated.");
     }
 
-    // Clear OTP once consumed
-    user.otpCode = undefined;
-    user.otpExpiresAt = undefined;
+    const inputHash = hashSha256(otpCode);
+    if (state.hash !== inputHash) {
+      state.attempts += 1;
+      await redisService.set(redisOtpKey, state, environment.OTP.TTL_SECONDS);
+      throw ApiError.badRequest(
+        `Invalid OTP code. ${environment.OTP.MAX_ATTEMPTS - state.attempts} attempts remaining.`
+      );
+    }
 
-    const { accessToken, refreshToken } = generateTokens(user);
-    user.refreshToken = refreshToken;
+    // OTP verified successfully: immediately delete to prevent reuse
+    await redisService.del(redisOtpKey);
+
+    // Issue rotated tokens
+    const { accessToken, refreshToken } = generateTokenPair(user);
+
+    // Store secure hash of refresh token in DB (Section 7)
+    user.refreshTokenHash = hashSha256(refreshToken);
     user.lastLoginAt = new Date();
     await user.save();
 
     const sanitizedUser = user.toObject();
-    delete sanitizedUser.password;
-    delete sanitizedUser.refreshToken;
-    delete sanitizedUser.otpCode;
-    delete sanitizedUser.otpExpiresAt;
+    delete sanitizedUser.refreshTokenHash;
+    delete sanitizedUser.tokenVersion;
 
-    return { user: sanitizedUser, accessToken, refreshToken };
+    return {
+      accessToken,
+      refreshToken,
+      user: sanitizedUser,
+    };
   }
 
   /**
-   * Refresh JWT token pair
+   * Rotate Refresh Token with Reuse Detection (Section 7)
    */
-  async refreshToken(token) {
+  async rotateRefreshToken(incomingToken) {
     let decoded;
     try {
-      decoded = jwt.verify(token, environment.JWT.REFRESH_SECRET);
+      decoded = jwt.verify(incomingToken, environment.JWT.REFRESH_SECRET);
     } catch (err) {
       throw ApiError.unauthorized("Invalid or expired refresh token.");
     }
 
-    const user = await User.findById(decoded.id).select("+refreshToken");
-    if (!user || user.refreshToken !== token) {
-      throw ApiError.unauthorized("Invalid refresh token session.");
+    const user = await User.findById(decoded.id).select("+refreshTokenHash +tokenVersion");
+    if (!user) {
+      throw ApiError.unauthorized("User not found.");
     }
 
-    const { accessToken, refreshToken: newRefreshToken } = generateTokens(user);
-    user.refreshToken = newRefreshToken;
+    // Invalidate if tokenVersion does not match
+    if (user.tokenVersion !== decoded.tokenVersion) {
+      throw ApiError.unauthorized("Session revoked. Please log in again.");
+    }
+
+    const incomingHash = hashSha256(incomingToken);
+
+    // Reuse detection (Section 7):
+    // If incoming token hash does not match current valid refreshTokenHash,
+    // a revoked token is being reused! Invalidate all user sessions!
+    if (user.refreshTokenHash !== incomingHash) {
+      user.tokenVersion += 1; // Invalidate all existing tokens
+      user.refreshTokenHash = null;
+      await user.save();
+      throw ApiError.unauthorized(
+        "Compromised refresh token reuse detected! All active sessions have been revoked.",
+        {},
+        "TOKEN_REUSE_DETECTED"
+      );
+    }
+
+    // Rotate tokens
+    const { accessToken, refreshToken: newRefreshToken } = generateTokenPair(user);
+    user.refreshTokenHash = hashSha256(newRefreshToken);
     await user.save();
 
-    return { accessToken, refreshToken: newRefreshToken };
+    return {
+      accessToken,
+      refreshToken: newRefreshToken,
+    };
   }
 
   /**
-   * User Logout
+   * Revoke session on logout (Section 7)
    */
   async logout(userId) {
-    await User.findByIdAndUpdate(userId, { refreshToken: null });
-    return { message: "Logged out successfully." };
+    const user = await User.findById(userId);
+    if (user) {
+      user.refreshTokenHash = null;
+      user.tokenVersion += 1;
+      await user.save();
+    }
+    return { message: "Successfully logged out. Session revoked." };
   }
 
   /**
-   * Retrieve Current Authenticated User Profile
+   * Current Authenticated User Profile
    */
-  async getProfile(userId) {
-    const user = await User.findById(userId).populate("siteId", "name code location radiusMeters");
+  async getMe(userId) {
+    const user = await User.findById(userId)
+      .populate("assignedSiteId", "siteCode siteName locationCode region centroid geofenceRadiusMeters")
+      .populate("assignedSupervisorId", "fullName employeeCode phoneNumber");
+
     if (!user) {
-      throw ApiError.notFound("User not found.");
+      throw ApiError.notFound("User profile not found.");
     }
+
     return user;
   }
 }

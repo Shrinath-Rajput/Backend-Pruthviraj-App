@@ -1,22 +1,26 @@
-FROM node:20-alpine AS base
+# Multi-Stage Production Dockerfile (Section 59)
+FROM node:20-alpine AS dependencies
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Install build dependencies if needed
+FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Copy package descriptors
-COPY package*.json ./
+# Non-root user for security compliance
+USER node
 
-# Install production dependencies
-RUN npm ci --only=production
+# Copy dependencies and application source
+COPY --chown=node:node --from=dependencies /app/node_modules ./node_modules
+COPY --chown=node:node . .
 
-# Copy application source
-COPY . .
+ENV NODE_ENV=production
+ENV PORT=5000
 
-# Expose server port
 EXPOSE 5000
 
-# Set production environment
-ENV NODE_ENV=production
+# Docker healthcheck endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
 
-# Start application
 CMD ["node", "src/server.js"]

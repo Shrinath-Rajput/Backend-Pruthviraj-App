@@ -1,94 +1,94 @@
-GeoWork Backend - Complete Project Structure
-==================================================
+PRUTHVIRAJ Workforce & Business Management System - Complete Project Structure
+================================================================================
 
 backend/
 │
 ├── src/
 │   │
 │   ├── config/
-│   │   ├── database.js
-│   │   ├── redis.js
-│   │   ├── s3.js
-│   │   └── environment.js
+│   │   ├── database.js          # Mongoose connection with pooling (max 50), IPv4 family, reconnection handling & graceful shutdown
+│   │   ├── redis.js             # ioredis client with connection events, memory-fallback for offline dev, and distributed Redlock locking
+│   │   ├── s3.js                # AWS S3 / MinIO client (AWS SDK v3) with PutObjectCommand, GetObjectCommand & Presigned URLs
+│   │   └── environment.js       # Strongly-typed environment variables with Zod validation, statutory rates, and defaults
 │   │
 │   ├── middleware/
-│   │   ├── authenticate.js
-│   │   ├── authorize.js
-│   │   ├── rateLimiter.js
-│   │   ├── upload.js
-│   │   ├── validate.js
-│   │   └── errorHandler.js
-│   │
-│   ├── routes/
-│   │   ├── index.js
-│   │   ├── auth.routes.js
-│   │   ├── attendance.routes.js
-│   │   ├── site.routes.js
-│   │   ├── supervisor.routes.js
-│   │   ├── leave.routes.js
-│   │   ├── payroll.routes.js
-│   │   └── executive.routes.js
+│   │   ├── authenticate.js      # JWT Bearer token verification, payload injection (id, role, businessIds, siteId), and expiry handling
+│   │   ├── authorize.js         # RBAC role & permission guards + Section 10 multi-business data isolation enforcement
+│   │   ├── rateLimiter.js       # Redis-backed sliding window rate limiters (global, OTP send 3/10m, OTP verify 3/5m, auth, upload)
+│   │   ├── upload.js            # Multer memory storage, strict MIME inspection (images, PDFs, Excel), and safe S3 key generation
+│   │   ├── validate.js          # Zod request validator for body, query, and params prior to business logic execution
+│   │   └── errorHandler.js      # Production centralized error handler formatting consistent JSON error envelopes (Section 44)
 │   │
 │   ├── common/
-│   │   ├── ApiError.js
-│   │   ├── ApiResponse.js
+│   │   ├── ApiError.js          # Operational custom error class supporting HTTP status, error codes, and contextual details
+│   │   ├── ApiResponse.js       # Standardized response envelopes with requestId, timestamp, data, and pagination metadata
 │   │   └── utils/
-│   │       ├── cryptoHash.js
-│   │       ├── geoSpatial.js
-│   │       └── pdfGenerator.js
+│   │       ├── cryptoHash.js    # SHA-256 deterministic attendance ledger chaining, verification, bcrypt password hashing, and masking
+│   │       ├── geoSpatial.js    # Haversine distance calculations, GeoJSON Point conversions, ray-casting polygon checks & geofencing
+│   │       └── pdfGenerator.js  # Real PDFKit renderer for printable monthly payslips with digital SHA-256 seal and audit reports
 │   │
 │   ├── modules/
 │   │   │
 │   │   ├── auth/
-│   │   │   ├── auth.controller.js
-│   │   │   ├── auth.service.js
-│   │   │   ├── auth.validation.js
-│   │   │   ├── auth.routes.js
-│   │   │   └── user.model.js
+│   │   │   ├── auth.controller.js   # Thin HTTP controller for mobile OTP login, token rotation, logout, and profile queries
+│   │   │   ├── auth.service.js      # Phone + OTP authentication, Redis hashed OTPs, JWT issuance, rotation, and reuse breach detection
+│   │   │   ├── auth.validation.js   # Zod validation schemas for phone numbers, 6-digit OTP codes, and refresh tokens
+│   │   │   ├── auth.routes.js       # Express router mounting /api/v1/auth public and protected endpoints
+│   │   │   └── user.model.js        # Mongoose schema for User with 8 enterprise roles, businessIds, masked KYC bank/PAN, and token versions
 │   │   │
 │   │   ├── attendance/
-│   │   │   ├── attendance.controller.js
-│   │   │   ├── attendance.service.js
-│   │   │   ├── attendance.model.js
-│   │   │   ├── attendance.validation.js
-│   │   │   └── attendance.routes.js
+│   │   │   ├── attendance.controller.js  # Controller for selfie/GPS punches, today status, 31-day shift grids, and Excel imports
+│   │   │   ├── attendance.service.js     # Attendance pipeline: Redis geofence lookup, GPS tolerance, S3 selfie, biometric abstraction, ledger chaining
+│   │   │   ├── attendance.model.js       # Schemas for AttendanceRecord (with prevRecordHash chain), Shift, ShiftAllocation, and Audit
+│   │   │   ├── attendance.validation.js  # Zod schemas for punch data, supervisor overrides, bulk marking, and shifts
+│   │   │   └── attendance.routes.js      # Routes for /api/v1/attendance (punch, status, history, export, excel, shifts)
 │   │   │
 │   │   ├── site/
-│   │   │   ├── site.controller.js
-│   │   │   ├── site.service.js
-│   │   │   ├── site.model.js
-│   │   │   └── site.routes.js
+│   │   │   ├── site.controller.js   # Controller for sites, clients, purchase orders, and workers
+│   │   │   ├── site.service.js      # Site CRUD with 24-hr Redis geofence caching, Client management, PO contracts, and Worker KYC
+│   │   │   ├── site.model.js        # Mongoose schemas for Site (2dsphere centroid/polygon), SiteGovernance, Client, and PurchaseOrder
+│   │   │   └── site.routes.js       # Routes for /api/v1/sites, /clients, /purchase-orders, /workers
 │   │   │
 │   │   ├── supervisor/
-│   │   │   ├── supervisor.controller.js
-│   │   │   ├── supervisor.service.js
-│   │   │   └── supervisor.routes.js
+│   │   │   ├── supervisor.controller.js  # Controller for managed sites, 1:1 handover, live crew rosters, and manual overrides
+│   │   │   ├── supervisor.service.js     # 1:1 supervisor governance with Redis Redlock handover, bulk GPS crew marking, and gate distance
+│   │   │   └── supervisor.routes.js      # Routes for /api/v1/supervisor (sites, handover, crew, bulk attendance, leaves, live roster)
 │   │   │
 │   │   ├── leave/
-│   │   │   ├── leave.controller.js
-│   │   │   ├── leave.service.js
-│   │   │   ├── leave.model.js
-│   │   │   └── leave.routes.js
+│   │   │   ├── leave.controller.js  # Controller for leave quotas, applications, and supervisory reviews
+│   │   │   ├── leave.service.js     # Quota tracking (Casual/Sick/Earned), negative balance prevention, and overlap conflict checks
+│   │   │   ├── leave.model.js       # Mongoose schemas for LeaveBalance and LeaveApplication
+│   │   │   └── leave.routes.js      # Routes for /api/v1/leaves (balances, my-requests, apply, review)
 │   │   │
 │   │   ├── payroll/
-│   │   │   ├── payroll.controller.js
-│   │   │   ├── payroll.service.js
-│   │   │   ├── payroll.model.js
-│   │   │   └── payroll.routes.js
+│   │   │   ├── payroll.controller.js  # Controller for payslips, monthly runs, approvals, and PDF streaming
+│   │   │   ├── payroll.service.js     # Statutory calculation engine (paise integer precision, PF 12%, ESIC 0.75%, PT slabs, PDFKit generation)
+│   │   │   ├── payroll.model.js       # Mongoose schemas for PayrollRun, SalarySlip, and Statutory Compliance records
+│   │   │   └── payroll.routes.js      # Routes for /api/v1/payroll (slips, slips/:id/pdf, process, approve, disburse)
 │   │   │
 │   │   └── executive/
-│   │       ├── executive.controller.js
-│   │       ├── executive.service.js
-│   │       ├── executive.model.js
-│   │       └── executive.routes.js
+│   │       ├── executive.controller.js  # Controller for multi-business dashboards, heatmap, billing, expenses, policy, audits, and seeding
+│   │       ├── executive.service.js     # Multi-business performance comparison, analytics trends, approvals, Tally ERP export, and master seeding
+│   │       ├── executive.model.js       # Schemas for GlobalGeofencePolicy, AuditViolation, Approval, Invoice, Expense, BankAccount, and AuditExportJob
+│   │       └── executive.routes.js      # Routes for /api/v1/executive (overview, performance, heatmap, approvals, billing, expenses, policy, audit)
 │   │
-│   ├── app.js
-│   └── server.js
+│   ├── app.js               # Centralized Express application mounting middleware, 7 modules, Swagger UI (/api-docs), and health probes
+│   └── server.js            # Node.js HTTP bootstrap with database/redis connections and Section 58 graceful shutdown handlers
 │
-├── package.json
-├── .env.example
-├── .gitignore
-├── Dockerfile
-├── docker-compose.yml
-├── PROJECT_STRUCTURE.txt
-└── README.md
+├── tests/
+│   ├── unit/
+│   │   ├── cryptoHash.test.js    # SHA-256 attendance block chaining, tampering detection, secure OTP generation, and string masking
+│   │   ├── geoSpatial.test.js    # Haversine distance, circular geofence containment, polygon ray-casting, and GPS tolerance checks
+│   │   └── payroll.test.js       # Statutory salary calculations, PF, ESIC limits, PT slabs, and zero floating-point drift
+│   └── integration/
+│       ├── auth.test.js          # SMS OTP login, verification rate limits, JWT rotation, and token reuse breach detection
+│       ├── security.test.js      # Business A vs B isolation, role guards, out-of-geofence punch blocking, and JWT rejection
+│       └── api.test.js           # Healthchecks, multi-business executive overview, leave quotas, and database seeding
+│
+├── package.json             # ES Module project descriptors, dependencies, and test/dev/start/lint/build/seed scripts
+├── .env.example             # Documented template for environment variables and secrets
+├── .gitignore               # Ignored files (node_modules, logs, .env)
+├── Dockerfile               # Multi-stage production container with non-root user and healthcheck
+├── docker-compose.yml       # Production stack: API app, MongoDB 7, Redis 7, and MinIO with persistent volumes
+├── PROJECT_STRUCTURE.txt    # File-by-file architecture specification map
+└── README.md                # Comprehensive documentation, setup guide, architecture details, and API reference

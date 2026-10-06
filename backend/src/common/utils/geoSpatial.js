@@ -4,19 +4,17 @@
 const EARTH_RADIUS_METERS = 6371000;
 
 /**
- * Convert degrees to radians
- * @param {number} degrees
- * @returns {number}
+ * Degrees to radians
  */
 const toRadians = (degrees) => (degrees * Math.PI) / 180;
 
 /**
- * Calculate Great-Circle distance between two coordinates using the Haversine formula
- * @param {number} lat1 - Latitude of point 1 in degrees
- * @param {number} lon1 - Longitude of point 1 in degrees
- * @param {number} lat2 - Latitude of point 2 in degrees
- * @param {number} lon2 - Longitude of point 2 in degrees
- * @returns {number} Distance in meters
+ * Calculate Great-Circle distance using Haversine formula
+ * @param {number} lat1
+ * @param {number} lon1
+ * @param {number} lat2
+ * @param {number} lon2
+ * @returns {number} Distance in meters rounded to 2 decimals
  */
 export const calculateDistanceMeters = (lat1, lon1, lat2, lon2) => {
   const dLat = toRadians(lat2 - lat1);
@@ -30,15 +28,11 @@ export const calculateDistanceMeters = (lat1, lon1, lat2, lon2) => {
       Math.sin(dLon / 2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return Math.round(EARTH_RADIUS_METERS * c * 100) / 100; // rounded to 2 decimal places
+  return Math.round(EARTH_RADIUS_METERS * c * 100) / 100;
 };
 
 /**
- * Validate GPS Coordinates
- * @param {number} lat
- * @param {number} lon
- * @returns {boolean}
+ * Validate latitude and longitude bounds
  */
 export const isValidCoordinate = (lat, lon) => {
   return (
@@ -54,42 +48,23 @@ export const isValidCoordinate = (lat, lon) => {
 };
 
 /**
- * Check if a point is within a circular geofence
- * @param {Object} point - { latitude, longitude }
- * @param {Object} center - { latitude, longitude }
- * @param {number} radiusMeters - Geofence radius in meters
- * @returns {{ isInside: boolean, distanceMeters: number }}
- */
-export const checkCircularGeofence = (point, center, radiusMeters) => {
-  const distance = calculateDistanceMeters(
-    point.latitude,
-    point.longitude,
-    center.latitude,
-    center.longitude
-  );
-
-  return {
-    isInside: distance <= radiusMeters,
-    distanceMeters: distance,
-    radiusMeters,
-  };
-};
-
-/**
- * Check if point is inside a polygon using Ray-Casting algorithm
+ * Check if a point [longitude, latitude] is inside a polygon using ray casting
  * @param {[number, number]} point - [longitude, latitude]
- * @param {Array<[number, number]>} polygonCoordinates - Array of [lon, lat]
- * @returns {boolean}
+ * @param {Array<Array<[number, number]>>|Array<[number, number]>} polygonCoords
  */
-export const isPointInPolygon = (point, polygonCoordinates) => {
-  const [x, y] = point;
+export const isPointInPolygon = (point, polygonCoords) => {
+  if (!polygonCoords || polygonCoords.length === 0) return false;
+  // Handle GeoJSON polygon: array of rings, outer ring is first
+  const ring = Array.isArray(polygonCoords[0][0]) ? polygonCoords[0] : polygonCoords;
+
+  const [x, y] = point; // [lon, lat]
   let inside = false;
 
-  for (let i = 0, j = polygonCoordinates.length - 1; i < polygonCoordinates.length; j = i++) {
-    const xi = polygonCoordinates[i][0];
-    const yi = polygonCoordinates[i][1];
-    const xj = polygonCoordinates[j][0];
-    const yj = polygonCoordinates[j][1];
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
 
     const intersect =
       yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
@@ -101,23 +76,67 @@ export const isPointInPolygon = (point, polygonCoordinates) => {
 };
 
 /**
- * Convert lat/lon into GeoJSON Point object for MongoDB 2dsphere indexing
- * Note: GeoJSON coordinates are in [longitude, latitude] order
- * @param {number} latitude
- * @param {number} longitude
- * @returns {{ type: 'Point', coordinates: [number, number] }}
+ * Full Geofence Evaluation Engine
  */
-export const toGeoJSONPoint = (latitude, longitude) => {
+export const evaluateGeofence = ({
+  userLat,
+  userLon,
+  gpsAccuracyMeters = 5.0,
+  siteCentroidCoords, // [longitude, latitude]
+  geofenceRadiusMeters = 50.0,
+  boundaryPolygon = null,
+  gpsAccuracyThresholdMeters = 20.0,
+}) => {
+  if (!isValidCoordinate(userLat, userLon)) {
+    return {
+      isInsideGeofence: false,
+      distanceMeters: Infinity,
+      gpsAccuracyMeters,
+      allowedRadiusMeters: geofenceRadiusMeters,
+      verificationStatus: "REJECTED",
+      reason: "INVALID_COORDINATES",
+    };
+  }
+
+  // Reject inaccurate GPS readings
+  if (gpsAccuracyMeters > gpsAccuracyThresholdMeters) {
+    return {
+      isInsideGeofence: false,
+      distanceMeters: Infinity,
+      gpsAccuracyMeters,
+      allowedRadiusMeters: geofenceRadiusMeters,
+      verificationStatus: "REJECTED",
+      reason: "POOR_GPS_ACCURACY",
+    };
+  }
+
+  const [siteLon, siteLat] = siteCentroidCoords;
+  const distance = calculateDistanceMeters(userLat, userLon, siteLat, siteLon);
+
+  // Buffer allowed accuracy (max 5m buffer)
+  const accuracyBuffer = Math.min(gpsAccuracyMeters, 5.0);
+  const effectiveAllowedRadius = geofenceRadiusMeters + accuracyBuffer;
+
+  let isInside = distance <= effectiveAllowedRadius;
+
+  // Check polygon boundary if configured
+  if (boundaryPolygon && boundaryPolygon.coordinates && boundaryPolygon.coordinates.length > 0) {
+    const polygonCheck = isPointInPolygon([userLon, userLat], boundaryPolygon.coordinates);
+    isInside = isInside || polygonCheck;
+  }
+
   return {
-    type: "Point",
-    coordinates: [Number(longitude), Number(latitude)],
+    isInsideGeofence: isInside,
+    distanceMeters: distance,
+    gpsAccuracyMeters,
+    allowedRadiusMeters: geofenceRadiusMeters,
+    verificationStatus: isInside ? "VERIFIED" : "FLAGGED_BREACH",
   };
 };
 
 export default {
   calculateDistanceMeters,
   isValidCoordinate,
-  checkCircularGeofence,
   isPointInPolygon,
-  toGeoJSONPoint,
+  evaluateGeofence,
 };

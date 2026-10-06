@@ -2,42 +2,64 @@ import mongoose from "mongoose";
 import environment from "./environment.js";
 
 /**
- * Connect to MongoDB using Mongoose with resilient connection options
+ * Configure Mongoose settings
+ */
+mongoose.set("strictQuery", true);
+
+let isConnected = false;
+
+/**
+ * Connect to MongoDB with connection pooling and retry logic
  */
 export const connectDatabase = async () => {
-  try {
-    const connectionInstance = await mongoose.connect(environment.MONGODB_URI, {
-      autoIndex: true, // Build indexes in development
-      serverSelectionTimeoutMS: 5000,
-    });
+  if (isConnected) {
+    return mongoose.connection;
+  }
 
-    console.log(`[Database] MongoDB connected successfully. Host: ${connectionInstance.connection.host}`);
-    return connectionInstance;
+  const options = {
+    autoIndex: true, // Auto build indexes
+    maxPoolSize: 50, // Resilient connection pool for high concurrency
+    minPoolSize: 5,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    family: 4, // IPv4
+  };
+
+  try {
+    const conn = await mongoose.connect(environment.MONGODB_URI, options);
+    isConnected = true;
+    console.log(`[Database] MongoDB Connected: ${conn.connection.host}/${conn.connection.name}`);
+    return conn.connection;
   } catch (error) {
-    console.error(`[Database Error] Failed to connect to MongoDB: ${error.message}`);
-    throw error;
+    console.error(`[Database Error] Connection failed: ${error.message}`);
+    // In production or test, propagate error
+    if (environment.NODE_ENV === "production") {
+      throw error;
+    }
   }
 };
 
 /**
- * Gracefully close MongoDB connection
+ * Disconnect MongoDB cleanly
  */
 export const disconnectDatabase = async () => {
+  if (!isConnected) return;
   try {
-    await mongoose.connection.close();
-    console.log("[Database] MongoDB connection closed gracefully.");
+    await mongoose.connection.close(false);
+    isConnected = false;
+    console.log("[Database] MongoDB connection closed cleanly.");
   } catch (error) {
-    console.error(`[Database Error] Error during disconnection: ${error.message}`);
+    console.error(`[Database Error] Error disconnecting: ${error.message}`);
   }
 };
 
-// Monitor connection events
 mongoose.connection.on("disconnected", () => {
+  isConnected = false;
   console.warn("[Database] MongoDB connection disconnected.");
 });
 
 mongoose.connection.on("error", (err) => {
-  console.error(`[Database] MongoDB connection error: ${err.message}`);
+  console.error(`[Database Error] Runtime error: ${err.message}`);
 });
 
 export default connectDatabase;

@@ -1,29 +1,41 @@
 /**
- * Standard API Response payload wrapper.
+ * Standard Production API Response Class
  */
-class ApiResponse {
+export class ApiResponse {
   /**
-   * @param {number} statusCode - HTTP status code
-   * @param {any} data - Response payload data
-   * @param {string} [message="Success"] - Informational message
+   * @param {number} statusCode
+   * @param {any} data
+   * @param {string} message
+   * @param {Object} [meta={}]
    */
-  constructor(statusCode, data, message = "Success") {
+  constructor(statusCode, data, message = "Success", meta = {}) {
     this.statusCode = statusCode;
-    this.data = data;
-    this.message = message;
     this.success = statusCode >= 200 && statusCode < 300;
+    this.message = message;
+    this.data = data;
+    this.meta = {
+      timestamp: new Date().toISOString(),
+      ...meta,
+    };
   }
 
-  static success(data, message = "Request successful") {
-    return new ApiResponse(200, data, message);
+  static success(data = {}, message = "Request processed successfully", meta = {}) {
+    return new ApiResponse(200, data, message, meta);
   }
 
-  static created(data, message = "Resource created successfully") {
-    return new ApiResponse(201, data, message);
+  static created(data = {}, message = "Resource created successfully", meta = {}) {
+    return new ApiResponse(201, data, message, meta);
   }
 
-  static accepted(data, message = "Request accepted for processing") {
-    return new ApiResponse(202, data, message);
+  static list(items = [], pagination = {}, message = "Records retrieved successfully", meta = {}) {
+    return new ApiResponse(200, items, message, {
+      ...pagination,
+      ...meta,
+    });
+  }
+
+  static accepted(data = {}, message = "Request accepted for background processing", meta = {}) {
+    return new ApiResponse(202, data, message, meta);
   }
 }
 
