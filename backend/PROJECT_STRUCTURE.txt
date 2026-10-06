@@ -1,0 +1,94 @@
+GeoWork Backend - Complete Project Structure
+==================================================
+
+backend/
+│
+├── src/
+│   │
+│   ├── config/
+│   │   ├── database.js
+│   │   ├── redis.js
+│   │   ├── s3.js
+│   │   └── environment.js
+│   │
+│   ├── middleware/
+│   │   ├── authenticate.js
+│   │   ├── authorize.js
+│   │   ├── rateLimiter.js
+│   │   ├── upload.js
+│   │   ├── validate.js
+│   │   └── errorHandler.js
+│   │
+│   ├── routes/
+│   │   ├── index.js
+│   │   ├── auth.routes.js
+│   │   ├── attendance.routes.js
+│   │   ├── site.routes.js
+│   │   ├── supervisor.routes.js
+│   │   ├── leave.routes.js
+│   │   ├── payroll.routes.js
+│   │   └── executive.routes.js
+│   │
+│   ├── common/
+│   │   ├── ApiError.js
+│   │   ├── ApiResponse.js
+│   │   └── utils/
+│   │       ├── cryptoHash.js
+│   │       ├── geoSpatial.js
+│   │       └── pdfGenerator.js
+│   │
+│   ├── modules/
+│   │   │
+│   │   ├── auth/
+│   │   │   ├── auth.controller.js
+│   │   │   ├── auth.service.js
+│   │   │   ├── auth.validation.js
+│   │   │   ├── auth.routes.js
+│   │   │   └── user.model.js
+│   │   │
+│   │   ├── attendance/
+│   │   │   ├── attendance.controller.js
+│   │   │   ├── attendance.service.js
+│   │   │   ├── attendance.model.js
+│   │   │   ├── attendance.validation.js
+│   │   │   └── attendance.routes.js
+│   │   │
+│   │   ├── site/
+│   │   │   ├── site.controller.js
+│   │   │   ├── site.service.js
+│   │   │   ├── site.model.js
+│   │   │   └── site.routes.js
+│   │   │
+│   │   ├── supervisor/
+│   │   │   ├── supervisor.controller.js
+│   │   │   ├── supervisor.service.js
+│   │   │   └── supervisor.routes.js
+│   │   │
+│   │   ├── leave/
+│   │   │   ├── leave.controller.js
+│   │   │   ├── leave.service.js
+│   │   │   ├── leave.model.js
+│   │   │   └── leave.routes.js
+│   │   │
+│   │   ├── payroll/
+│   │   │   ├── payroll.controller.js
+│   │   │   ├── payroll.service.js
+│   │   │   ├── payroll.model.js
+│   │   │   └── payroll.routes.js
+│   │   │
+│   │   └── executive/
+│   │       ├── executive.controller.js
+│   │       ├── executive.service.js
+│   │       ├── executive.model.js
+│   │       └── executive.routes.js
+│   │
+│   ├── app.js
+│   └── server.js
+│
+├── package.json
+├── .env.example
+├── .gitignore
+├── Dockerfile
+├── docker-compose.yml
+├── PROJECT_STRUCTURE.txt
+└── README.md

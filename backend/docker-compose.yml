@@ -1,0 +1,68 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: geowork-backend-api
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://mongodb:27017/geowork_db
+      - REDIS_URL=redis://redis:6379
+      - JWT_ACCESS_SECRET=your_jwt_access_secret_key_change_in_production
+      - JWT_REFRESH_SECRET=your_jwt_refresh_secret_key_change_in_production
+      - JWT_ACCESS_EXPIRES_IN=15m
+      - JWT_REFRESH_EXPIRES_IN=7d
+      - OTP_EXPIRY_MINUTES=5
+      - OTP_RATE_LIMIT=3
+      - CORS_ORIGIN=*
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - geowork-network
+
+  mongodb:
+    image: mongo:7.0
+    container_name: geowork-mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - geowork-network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: geowork-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - geowork-network
+
+volumes:
+  mongo_data:
+  redis_data:
+
+networks:
+  geowork-network:
+    driver: bridge
