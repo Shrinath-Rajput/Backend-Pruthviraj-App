@@ -3,7 +3,7 @@
 
 An industrial IoT, precision geofenced workforce, attendance, payroll, compliance, financial, and multi-business management platform engineered for **Pruthviraj Enterprises** and **Pruthviraj Facilities Pvt. Ltd.**.
 
-Built with **JavaScript (Node.js 20+ LTS ES Modules)**, Express.js, MongoDB 7+ (GeoJSON `2dsphere`), Redis 7+, AWS S3 / MinIO, and a cryptographic SHA-256 chained attendance ledger.
+Built with **JavaScript (Node.js 20+ LTS ES Modules)**, Express.js, MongoDB 7+ (GeoJSON `2dsphere`), Redis 7+, local uploads storage engine with MongoDB links, and a cryptographic SHA-256 chained attendance ledger.
 
 ---
 
@@ -38,7 +38,7 @@ backend/
 │   ├── config/
 │   │   ├── database.js          # Mongoose connection pooling & lifecycle
 │   │   ├── redis.js             # ioredis client, fallback memory cache, distributed locks
-│   │   ├── s3.js                # AWS S3 / MinIO client & presigned URLs
+│   │   ├── storage.js           # Local uploads directory storage engine
 │   │   └── environment.js       # Strongly-typed Zod environment validation
 │   │
 │   ├── middleware/
@@ -126,7 +126,6 @@ backend/
 - **Node.js**: v20+ LTS (Tested on Node v20 & v26)
 - **MongoDB**: v7.0+ (Replica Set recommended for transactions)
 - **Redis**: v7.0+
-- **MinIO / AWS S3**: For document and payslip storage
 
 ### Quick Installation
 
@@ -165,12 +164,8 @@ OTP_TTL_SECONDS=300
 OTP_MAX_VERIFY_ATTEMPTS=3
 ALLOW_DEV_OTP=true
 
-S3_ENDPOINT=http://localhost:9000
-S3_REGION=ap-south-1
-S3_BUCKET=pruthviraj-enterprise-storage
-S3_ACCESS_KEY_ID=minioadmin
-S3_SECRET_ACCESS_KEY=minioadmin
-S3_FORCE_PATH_STYLE=true
+UPLOAD_DIR=uploads
+APP_URL=http://localhost:5000
 
 BIOMETRIC_THRESHOLD=80.0
 DEFAULT_GEOFENCE_RADIUS_METERS=50

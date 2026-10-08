@@ -15,7 +15,8 @@ logs/
 *.log
 
 # Runtime Data & Uploads
-uploads/
+uploads/*
+!uploads/.gitkeep
 temp/
 coverage/
 .nyc_output/

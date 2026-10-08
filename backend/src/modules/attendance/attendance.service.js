@@ -5,7 +5,7 @@ import User from "../auth/user.model.js";
 import ApiError from "../../common/ApiError.js";
 import environment from "../../config/environment.js";
 import { redisService } from "../../config/redis.js";
-import { uploadToS3, generateSafeStorageKey } from "../../middleware/upload.js";
+import uploadService from "../upload/upload.service.js";
 import {
   calculateAttendanceRecordHash,
   hashSha256,
@@ -92,17 +92,21 @@ export class AttendanceService {
       );
     }
 
-    // 5. Process Selfie Image & Upload to S3 (Section 19 & 43)
+    // 5. Process Selfie Image & Save to Uploads Folder (Stored in MongoDB)
     let selfiePhotoUrl = null;
     let photoHash = "no_photo";
     if (selfieFile) {
       photoHash = hashSha256(selfieFile.buffer);
-      const storageKey = generateSafeStorageKey("selfies", siteCache.businessId, selfieFile.originalname || "selfie.jpg");
-      selfiePhotoUrl = await uploadToS3({
-        key: storageKey,
+      const savedUpload = await uploadService.saveUpload({
         buffer: selfieFile.buffer,
-        mimeType: selfieFile.mimetype,
+        originalName: selfieFile.originalname || "selfie.jpg",
+        mimeType: selfieFile.mimetype || "image/jpeg",
+        folder: "selfies",
+        businessId: siteCache.businessId,
+        uploadedBy: userId,
+        entityType: "SELFIE",
       });
+      selfiePhotoUrl = savedUpload.url;
     }
 
     // 6. Biometric Verification Abstraction (Section 20)

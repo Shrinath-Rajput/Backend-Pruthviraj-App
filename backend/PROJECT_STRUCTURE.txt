@@ -8,14 +8,14 @@ backend/
 │   ├── config/
 │   │   ├── database.js          # Mongoose connection with pooling (max 50), IPv4 family, reconnection handling & graceful shutdown
 │   │   ├── redis.js             # ioredis client with connection events, memory-fallback for offline dev, and distributed Redlock locking
-│   │   ├── s3.js                # AWS S3 / MinIO client (AWS SDK v3) with PutObjectCommand, GetObjectCommand & Presigned URLs
-│   │   └── environment.js       # Strongly-typed environment variables with Zod validation, statutory rates, and defaults
+│   │   ├── storage.js           # Local uploads directory engine with safe path normalization, disk storage & web URL links
+│   │   └── environment.js       # Strongly-typed environment variables with Zod validation, UPLOAD_DIR, and statutory rates
 │   │
 │   ├── middleware/
 │   │   ├── authenticate.js      # JWT Bearer token verification, payload injection (id, role, businessIds, siteId), and expiry handling
 │   │   ├── authorize.js         # RBAC role & permission guards + Section 10 multi-business data isolation enforcement
 │   │   ├── rateLimiter.js       # Redis-backed sliding window rate limiters (global, OTP send 3/10m, OTP verify 3/5m, auth, upload)
-│   │   ├── upload.js            # Multer memory storage, strict MIME inspection (images, PDFs, Excel), and safe S3 key generation
+│   │   ├── upload.js            # Multer memory storage, strict MIME inspection (images, PDFs, Excel), and local storage integration
 │   │   ├── validate.js          # Zod request validator for body, query, and params prior to business logic execution
 │   │   └── errorHandler.js      # Production centralized error handler formatting consistent JSON error envelopes (Section 44)
 │   │
@@ -38,7 +38,7 @@ backend/
 │   │   │
 │   │   ├── attendance/
 │   │   │   ├── attendance.controller.js  # Controller for selfie/GPS punches, today status, 31-day shift grids, and Excel imports
-│   │   │   ├── attendance.service.js     # Attendance pipeline: Redis geofence lookup, GPS tolerance, S3 selfie, biometric abstraction, ledger chaining
+│   │   │   ├── attendance.service.js     # Attendance pipeline: Redis geofence lookup, GPS tolerance, selfie upload, biometric abstraction, ledger chaining
 │   │   │   ├── attendance.model.js       # Schemas for AttendanceRecord (with prevRecordHash chain), Shift, ShiftAllocation, and Audit
 │   │   │   ├── attendance.validation.js  # Zod schemas for punch data, supervisor overrides, bulk marking, and shifts
 │   │   │   └── attendance.routes.js      # Routes for /api/v1/attendance (punch, status, history, export, excel, shifts)
@@ -66,13 +66,19 @@ backend/
 │   │   │   ├── payroll.model.js       # Mongoose schemas for PayrollRun, SalarySlip, and Statutory Compliance records
 │   │   │   └── payroll.routes.js      # Routes for /api/v1/payroll (slips, slips/:id/pdf, process, approve, disburse)
 │   │   │
-│   │   └── executive/
-│   │       ├── executive.controller.js  # Controller for multi-business dashboards, heatmap, billing, expenses, policy, audits, and seeding
-│   │       ├── executive.service.js     # Multi-business performance comparison, analytics trends, approvals, Tally ERP export, and master seeding
-│   │       ├── executive.model.js       # Schemas for GlobalGeofencePolicy, AuditViolation, Approval, Invoice, Expense, BankAccount, and AuditExportJob
-│   │       └── executive.routes.js      # Routes for /api/v1/executive (overview, performance, heatmap, approvals, billing, expenses, policy, audit)
+│   │   ├── executive/
+│   │   │   ├── executive.controller.js  # Controller for multi-business dashboards, heatmap, billing, expenses, policy, audits, and seeding
+│   │   │   ├── executive.service.js     # Multi-business performance comparison, analytics trends, approvals, Tally ERP export, and master seeding
+│   │   │   ├── executive.model.js       # Schemas for GlobalGeofencePolicy, AuditViolation, Approval, Invoice, Expense, BankAccount, and AuditExportJob
+│   │   │   └── executive.routes.js      # Routes for /api/v1/executive (overview, performance, heatmap, approvals, billing, expenses, policy, audit)
+│   │   │
+│   │   └── upload/
+│   │       ├── upload.controller.js     # Controller for single/multiple image uploads, MongoDB metadata query, and deletion
+│   │       ├── upload.service.js        # File system persistence in uploads/ folder, MongoDB link storage & management
+│   │       ├── upload.model.js          # Mongoose schema for Upload storing file URLs, size, mimeType, and metadata in MongoDB
+│   │       └── upload.routes.js         # Routes for /api/v1/uploads (image upload, file upload, multiple, query, delete)
 │   │
-│   ├── app.js               # Centralized Express application mounting middleware, 7 modules, Swagger UI (/api-docs), and health probes
+│   ├── app.js               # Centralized Express application mounting middleware, static /uploads route, modules, Swagger UI, and health probes
 │   └── server.js            # Node.js HTTP bootstrap with database/redis connections and Section 58 graceful shutdown handlers
 │
 ├── tests/

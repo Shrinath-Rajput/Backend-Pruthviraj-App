@@ -75,6 +75,10 @@ const userSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+    avatarUrl: {
+      type: String,
+      default: null,
+    },
     panNumber: {
       type: String,
       trim: true,

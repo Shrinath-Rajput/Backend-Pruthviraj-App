@@ -2,7 +2,7 @@ import { Site, SiteGovernance, Client, PurchaseOrder } from "./site.model.js";
 import User from "../auth/user.model.js";
 import ApiError from "../../common/ApiError.js";
 import { redisService } from "../../config/redis.js";
-import { uploadToS3, generateSafeStorageKey } from "../../middleware/upload.js";
+import uploadService from "../upload/upload.service.js";
 
 const SITE_CACHE_TTL = 86400; // 24 hours (Section 15)
 
@@ -220,8 +220,15 @@ export class SiteService {
 
     let documentUrl = null;
     if (file) {
-      const storageKey = generateSafeStorageKey("purchase_orders", poData.businessId, file.originalname);
-      documentUrl = await uploadToS3({ key: storageKey, buffer: file.buffer, mimeType: file.mimetype });
+      const savedDoc = await uploadService.saveUpload({
+        buffer: file.buffer,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        folder: "purchase_orders",
+        businessId: poData.businessId,
+        entityType: "PURCHASE_ORDER",
+      });
+      documentUrl = savedDoc.url;
     }
 
     return await PurchaseOrder.create({
@@ -310,8 +317,16 @@ export class SiteService {
     const worker = await this.getWorkerById(workerId, allowedBusinessIds);
     if (!file) throw ApiError.badRequest("Document file buffer required.");
 
-    const storageKey = generateSafeStorageKey("worker_docs", worker.businessIds[0] || "general", file.originalname);
-    const fileUrl = await uploadToS3({ key: storageKey, buffer: file.buffer, mimeType: file.mimetype });
+    const savedDoc = await uploadService.saveUpload({
+      buffer: file.buffer,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      folder: "worker_docs",
+      businessId: worker.businessIds[0] || "general",
+      uploadedBy: worker._id,
+      entityType: "WORKER_DOC",
+    });
+    const fileUrl = savedDoc.url;
 
     worker.documents.push({
       documentType,

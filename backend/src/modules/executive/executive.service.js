@@ -13,7 +13,7 @@ import { PayrollRun, SalarySlip, ComplianceRecord } from "../payroll/payroll.mod
 import User from "../auth/user.model.js";
 import ApiError from "../../common/ApiError.js";
 import { generateAuditReportPdf } from "../../common/utils/pdfGenerator.js";
-import { uploadToS3, generateSafeStorageKey } from "../../middleware/upload.js";
+import uploadService from "../upload/upload.service.js";
 import crypto from "crypto";
 
 export class ExecutiveService {
@@ -262,11 +262,18 @@ export class ExecutiveService {
           })),
         });
 
-        const s3Key = generateSafeStorageKey("audits", targetBusiness, `audit_${jobId}.pdf`);
-        const url = await uploadToS3({ key: s3Key, buffer: pdfBuffer, mimeType: "application/pdf" });
+        const savedAudit = await uploadService.saveUpload({
+          buffer: pdfBuffer,
+          originalName: `audit_${jobId}.pdf`,
+          mimeType: "application/pdf",
+          folder: "audits",
+          businessId: targetBusiness,
+          entityType: "AUDIT",
+          entityId: jobId,
+        });
 
         job.status = "READY";
-        job.downloadUrl = url;
+        job.downloadUrl = savedAudit.url;
         await job.save();
       } catch (err) {
         job.status = "FAILED";

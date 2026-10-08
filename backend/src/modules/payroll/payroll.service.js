@@ -3,7 +3,7 @@ import { AttendanceRecord } from "../attendance/attendance.model.js";
 import User from "../auth/user.model.js";
 import ApiError from "../../common/ApiError.js";
 import { generateSalarySlipPdf } from "../../common/utils/pdfGenerator.js";
-import { uploadToS3, generateSafeStorageKey } from "../../middleware/upload.js";
+import uploadService from "../upload/upload.service.js";
 import { hashSha256 } from "../../common/utils/cryptoHash.js";
 import environment from "../../config/environment.js";
 
@@ -153,13 +153,17 @@ export class PayrollService {
         sha256Seal,
       });
 
-      // Upload PDF to S3/MinIO
-      const s3Key = generateSafeStorageKey("payslips", businessId, `slip_${worker.employeeCode}_${payPeriod}.pdf`);
-      const pdfStorageUrl = await uploadToS3({
-        key: s3Key,
+      // Save Payslip PDF locally and store link in MongoDB
+      const savedPdf = await uploadService.saveUpload({
         buffer: pdfBuffer,
+        originalName: `slip_${worker.employeeCode}_${payPeriod}.pdf`,
         mimeType: "application/pdf",
+        folder: "payslips",
+        businessId,
+        uploadedBy: worker._id,
+        entityType: "PAYSLIP",
       });
+      const pdfStorageUrl = savedPdf.url;
 
       await SalarySlip.findOneAndUpdate(
         { userId: worker._id, payPeriod },

@@ -24,13 +24,11 @@ const envSchema = z.object({
   OTP_SEND_WINDOW_SECONDS: z.coerce.number().default(600), // 10 minutes
   ALLOW_DEV_OTP: z.coerce.boolean().default(true), // allows returning devOtp in response for development/testing
 
-  // AWS S3 / MinIO Configuration
-  S3_ENDPOINT: z.string().optional(),
-  S3_REGION: z.string().default("ap-south-1"),
-  S3_BUCKET: z.string().default("pruthviraj-enterprise-storage"),
-  S3_ACCESS_KEY_ID: z.string().default("mock_access_key"),
-  S3_SECRET_ACCESS_KEY: z.string().default("mock_secret_key"),
-  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
+  // Local File & Upload Storage Configuration
+  UPLOAD_DIR: z.string().default("uploads"),
+  APP_URL: z.string().default("http://localhost:5000"),
+
+
 
   // CORS & Security
   CORS_ORIGINS: z.string().default("*"),
@@ -68,14 +66,11 @@ const environment = {
     WINDOW_SECONDS: parsedEnv.data.OTP_SEND_WINDOW_SECONDS,
     ALLOW_DEV_OTP: parsedEnv.data.ALLOW_DEV_OTP,
   },
-  S3: {
-    ENDPOINT: parsedEnv.data.S3_ENDPOINT,
-    REGION: parsedEnv.data.S3_REGION,
-    BUCKET: parsedEnv.data.S3_BUCKET,
-    ACCESS_KEY_ID: parsedEnv.data.S3_ACCESS_KEY_ID,
-    SECRET_ACCESS_KEY: parsedEnv.data.S3_SECRET_ACCESS_KEY,
-    FORCE_PATH_STYLE: parsedEnv.data.S3_FORCE_PATH_STYLE,
+  STORAGE: {
+    UPLOAD_DIR: parsedEnv.data.UPLOAD_DIR,
+    APP_URL: parsedEnv.data.APP_URL,
   },
+
   COMPLIANCE: {
     PF_PERCENT_EMPLOYEE: 12.0,
     PF_PERCENT_EMPLOYER: 12.0,

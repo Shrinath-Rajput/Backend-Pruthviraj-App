@@ -60,11 +60,9 @@ const siteSchema = new mongoose.Schema(
       type: {
         type: String,
         enum: ["Polygon"],
-        default: "Polygon",
       },
       coordinates: {
         type: [[[Number]]], // Linear rings of [lon, lat]
-        default: undefined,
       },
     },
     geofenceRadiusMeters: {
@@ -91,7 +89,7 @@ const siteSchema = new mongoose.Schema(
 
 // 2dsphere indexes for proximity ($near) and polygon boundary containment ($geoIntersects)
 siteSchema.index({ centroid: "2dsphere" });
-siteSchema.index({ boundaryPolygon: "2dsphere" });
+siteSchema.index({ boundaryPolygon: "2dsphere" }, { sparse: true });
 siteSchema.index({ businessId: 1, isActive: 1 });
 
 export const Site = mongoose.model("Site", siteSchema);

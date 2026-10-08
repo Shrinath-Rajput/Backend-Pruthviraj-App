@@ -19,11 +19,17 @@ import supervisorRoutes from "./modules/supervisor/supervisor.routes.js";
 import leaveRoutes from "./modules/leave/leave.routes.js";
 import payrollRoutes from "./modules/payroll/payroll.routes.js";
 import executiveRoutes from "./modules/executive/executive.routes.js";
+import uploadRoutes from "./modules/upload/upload.routes.js";
+import { UPLOAD_ROOT_DIR } from "./config/storage.js";
 
 const app = express();
 
-// 1. Helmet HTTP Security Headers
-app.use(helmet());
+// 1. Helmet HTTP Security Headers (Allowing cross-origin resource access for uploaded static images)
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 
 // 2. CORS
 app.use(
@@ -71,6 +77,15 @@ const swaggerDocument = {
     "/executive/overview": { get: { summary: "Executive multi-business overview", tags: ["Executive"] } },
     "/executive/business-performance": { get: { summary: "Compare performance between businesses", tags: ["Executive"] } },
     "/executive/policy": { get: { summary: "Query global geofencing policy", tags: ["Executive"] } },
+    "/uploads/image": { post: { summary: "Upload image and store link in MongoDB", tags: ["Uploads"] } },
+    "/uploads": {
+      post: { summary: "Upload generic file and store link in MongoDB", tags: ["Uploads"] },
+      get: { summary: "List uploaded images and file links from MongoDB", tags: ["Uploads"] },
+    },
+    "/uploads/{id}": {
+      get: { summary: "Get upload record from MongoDB", tags: ["Uploads"] },
+      delete: { summary: "Delete uploaded file and MongoDB record", tags: ["Uploads"] },
+    },
   },
 };
 
@@ -109,7 +124,10 @@ app.get("/health/ready", async (req, res) => {
   });
 });
 
-// 7. Mount Module Routes (Base: /api/v1)
+// 7. Serve Uploaded Files Statically
+app.use("/uploads", express.static(UPLOAD_ROOT_DIR));
+
+// 8. Mount Module Routes (Base: /api/v1)
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/attendance", attendanceRoutes);
 app.use("/api/v1/sites", siteRoutes);
@@ -117,8 +135,9 @@ app.use("/api/v1/supervisor", supervisorRoutes);
 app.use("/api/v1/leaves", leaveRoutes);
 app.use("/api/v1/payroll", payrollRoutes);
 app.use("/api/v1/executive", executiveRoutes);
+app.use("/api/v1/uploads", uploadRoutes);
 
-// 8. 404 Undefined Route Handler
+// 9. 404 Undefined Route Handler
 app.use((req, res, next) => {
   next(
     ApiError.notFound(
@@ -128,7 +147,7 @@ app.use((req, res, next) => {
   );
 });
 
-// 9. Centralized Error Handler
+// 10. Centralized Error Handler
 app.use(errorHandler);
 
 export default app;
